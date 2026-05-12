@@ -1,3 +1,8 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -125,3 +130,46 @@ def test_save_refuses_overwrite_by_default(tmp_path) -> None:
 
     with pytest.raises(FileExistsError):
         save_gapsbi_hdf5(path, dataset)
+
+
+def test_generate_dataset_cli_supports_ricker_log1p_mnar(tmp_path) -> None:
+    output_path = tmp_path / "ricker_log1p_mnar.h5"
+    repo_root = Path(__file__).parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_dataset.py",
+            "--task",
+            "ricker",
+            "--mask",
+            "self_censoring_mnar",
+            "--missing-fraction",
+            "1.0",
+            "--mnar-score-transform",
+            "log1p",
+            "--n-train",
+            "2",
+            "--n-val",
+            "1",
+            "--n-test",
+            "1",
+            "--seed",
+            "123",
+            "--output",
+            str(output_path),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+    assert "Saved:" in result.stdout
+    _, metadata = load_gapsbi_hdf5(output_path)
+    assert metadata["mask"]["name"] == "self_censoring_mnar"
+    assert metadata["mask"]["score_transform"] == "log1p"

@@ -29,6 +29,8 @@ Implemented:
 - Mask generators:
   - `PointMCARMask`
   - `BlockMCARMask`
+  - `SelfCensoringMNARMask`
+  - `ValueDependentMNARMask` alias
 - Dataset generation:
   - `generate_split`
   - `generate_dataset`
@@ -46,10 +48,10 @@ Implemented:
 
 Not implemented yet:
 
-- MAR and MNAR masks
+- MAR masks
 - Spatial SIR and Weinberg simulators
 - registry helpers
-- baselines
+- baseline implementations
 - calibration diagnostics such as SBC/TARP
 
 ## Installation
@@ -133,12 +135,24 @@ Implemented MCAR masks:
 - `PointMCARMask`: independent Bernoulli masking at each entry.
 - `BlockMCARMask`: contiguous missing blocks for 1D vectors or batched 1D data.
 
+Implemented MNAR masks:
+
+- `SelfCensoringMNARMask`: value-dependent self-censoring. Each sample is optionally transformed, min/max shifted into `[0, 1]`, then higher normalized values receive higher missingness probability. Constant samples use score `0.5` everywhere to avoid division instability.
+
+`SelfCensoringMNARMask` supports `score_transform`:
+
+- `identity`: default behavior; score directly from `x_full`.
+- `log1p`: score from `np.log1p(x_full)`. This is useful for nonnegative spiky/count data such as Ricker, but requires all `x_full` values to be nonnegative.
+- `abs`: score from `np.abs(x_full)`, useful for signed vector data when magnitude should drive missingness.
+
+The mask metadata records `name`, `missing_fraction`, `score`, `score_transform`, `constant_score`, and `eps`.
+
 Mask convention:
 
 - `1`: observed
 - `0`: missing
 
-MAR and MNAR generators are planned but not implemented yet.
+MAR generators are planned but not implemented yet.
 
 ## HDF5 Dataset Contract
 
@@ -219,12 +233,38 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --overwrite
 ```
 
+Example GLU dataset with value-dependent MNAR self-censoring:
+
+```bash
+PYTHONPATH=src python scripts/generate_dataset.py \
+  --task glu \
+  --dim 10 \
+  --simulator-scale 0.1 \
+  --mask self_censoring_mnar \
+  --missing-fraction 0.25 \
+  --output data/glu_self_censoring_mnar_25.h5 \
+  --overwrite
+```
+
+Example Ricker dataset with log-compressed MNAR self-censoring:
+
+```bash
+PYTHONPATH=src python scripts/generate_dataset.py \
+  --task ricker \
+  --mask self_censoring_mnar \
+  --missing-fraction 1.0 \
+  --mnar-score-transform log1p \
+  --output data/ricker_self_censoring_mnar_log1p.h5 \
+  --overwrite
+```
+
 Supported generation options:
 
 - `--task {ricker,oup,glu,glm}`
-- `--mask {point_mcar,block_mcar}`
+- `--mask {point_mcar,block_mcar,self_censoring_mnar}`
 - `--missing-fraction`
 - `--block-size`
+- `--mnar-score-transform {identity,log1p,abs}`
 - `--n-train`
 - `--n-val`
 - `--n-test`
@@ -236,6 +276,7 @@ Task-specific options:
 
 - GLU: `--dim`, `--simulator-scale`
 - GLM: `--dim`, `--prior-bound`, `--duration`, `--summary {sufficient,raw}`
+- MNAR masks: `--mnar-score-transform {identity,log1p,abs}`
 
 ## Plot Datasets
 
@@ -257,6 +298,8 @@ The plotting CLI supports:
 - `--plot-type auto`
 - `--plot-type timeseries`
 - `--plot-type vector`
+- `--show`
+- `--log-y`
 
 `auto` chooses vector plots for metadata task `glu` or `glm`; otherwise it uses time-series plots. Use `--log-y` for time-series plots such as Ricker if desired.
 
@@ -302,8 +345,9 @@ The test suite currently covers:
 - RNG reproducibility
 - prior sampling and log probabilities
 - simulator shapes and reproducibility
-- MCAR masks
+- MCAR and MNAR masks
 - HDF5 contract validation and roundtrip behavior
+- dataset generation CLI behavior
 - plotting helper behavior
 
 Run tests with:

@@ -7,16 +7,25 @@ import numpy as np
 
 from gapsbi.datasets import generate_dataset
 from gapsbi.io import save_gapsbi_hdf5
-from gapsbi.masks import BlockMCARMask, PointMCARMask
+from gapsbi.masks import BlockMCARMask, PointMCARMask, SelfCensoringMNARMask
 from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
     parser.add_argument("--task", choices=["ricker", "oup", "glu", "glm"], default="ricker")
-    parser.add_argument("--mask", choices=["point_mcar", "block_mcar"], default="point_mcar")
+    parser.add_argument(
+        "--mask",
+        choices=["point_mcar", "block_mcar", "self_censoring_mnar"],
+        default="point_mcar",
+    )
     parser.add_argument("--missing-fraction", type=float, default=0.25)
     parser.add_argument("--block-size", type=int, default=5)
+    parser.add_argument(
+        "--mnar-score-transform",
+        choices=["identity", "log1p", "abs"],
+        default="identity",
+    )
     parser.add_argument("--dim", type=int, default=10)
     parser.add_argument("--prior-bound", type=float, default=2.0)
     parser.add_argument("--duration", type=int, default=100)
@@ -45,10 +54,15 @@ def main() -> None:
         )
     if args.mask == "point_mcar":
         mask_generator = PointMCARMask(missing_fraction=args.missing_fraction)
-    else:
+    elif args.mask == "block_mcar":
         mask_generator = BlockMCARMask(
             missing_fraction=args.missing_fraction,
             block_size=args.block_size,
+        )
+    else:
+        mask_generator = SelfCensoringMNARMask(
+            missing_fraction=args.missing_fraction,
+            score_transform=args.mnar_score_transform,
         )
 
     dataset = generate_dataset(
