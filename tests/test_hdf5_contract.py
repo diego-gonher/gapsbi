@@ -216,3 +216,52 @@ def test_generate_dataset_cli_supports_coordinate_mar(tmp_path) -> None:
     _, metadata = load_gapsbi_hdf5(output_path)
     assert metadata["mask"]["name"] == "coordinate_mar"
     assert metadata["mask"]["mode"] == "increasing"
+
+
+def test_generate_dataset_cli_supports_spatial_sir(tmp_path) -> None:
+    output_path = tmp_path / "spatial_sir_coordinate_mar.h5"
+    repo_root = Path(__file__).parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_dataset.py",
+            "--task",
+            "spatial_sir",
+            "--grid-size",
+            "4",
+            "--measurement-time",
+            "0.05",
+            "--simulation-step-size",
+            "0.01",
+            "--mask",
+            "coordinate_mar",
+            "--missing-fraction",
+            "0.25",
+            "--n-train",
+            "5",
+            "--n-val",
+            "2",
+            "--n-test",
+            "2",
+            "--seed",
+            "123",
+            "--output",
+            str(output_path),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+    assert "Saved:" in result.stdout
+    dataset, metadata = load_gapsbi_hdf5(output_path)
+    validate_gapsbi_dataset(dataset)
+    assert metadata["task"] == "spatial_sir"
+    assert metadata["simulator"]["original_x_shape"] == [3, 4, 4]
+    assert metadata["mask"]["name"] == "coordinate_mar"

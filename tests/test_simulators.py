@@ -1,7 +1,21 @@
 import numpy as np
 import pytest
 
-from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
+from gapsbi.datasets import generate_dataset, generate_split
+from gapsbi.masks import (
+    BlockMCARMask,
+    CoordinateMARMask,
+    PointMCARMask,
+    SelfCensoringMNARMask,
+)
+from gapsbi.rng import make_rng
+from gapsbi.simulators import (
+    GLMSimulator,
+    GLUSimulator,
+    OUPSimulator,
+    RickerSimulator,
+    SpatialSIRSimulator,
+)
 
 
 def test_ricker_sample_theta_shape() -> None:
@@ -292,3 +306,113 @@ def test_glm_metadata_contains_stimulus_seed_and_summary() -> None:
 
     assert metadata["stimulus_seed"] == 99
     assert metadata["summary"] == "raw"
+
+
+def test_spatial_sir_basic_properties() -> None:
+    simulator = SpatialSIRSimulator(lattice_shape=(4, 5))
+
+    assert simulator.theta_dim == 2
+    assert simulator.x_shape == (3 * 4 * 5,)
+
+
+def test_spatial_sir_simulate_single_shape_dtype_and_values() -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    x = simulator.simulate(np.array([0.5, 0.2]), np.random.default_rng(123))
+
+    assert x.shape == (3 * 4 * 4,)
+    assert x.dtype == np.float32
+    assert np.all((x == 0.0) | (x == 1.0))
+
+
+def test_spatial_sir_simulate_batch_shape() -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    theta = np.array([[0.5, 0.2], [0.1, 0.8]])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (2, 3 * 4 * 4)
+
+
+def test_spatial_sir_same_seed_is_reproducible() -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    theta = np.array([[0.5, 0.2], [0.1, 0.8]])
+    rng_a = np.random.default_rng(123)
+    rng_b = np.random.default_rng(123)
+
+    theta_a = simulator.sample_theta(3, rng_a)
+    theta_b = simulator.sample_theta(3, rng_b)
+    x_a = simulator.simulate(theta, rng_a)
+    x_b = simulator.simulate(theta, rng_b)
+
+    np.testing.assert_array_equal(theta_a, theta_b)
+    np.testing.assert_array_equal(x_a, x_b)
+
+
+def test_spatial_sir_different_theta_produces_valid_outputs() -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    theta = np.array([[0.0, 0.0], [1.0, 1.0]])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (2, 3 * 4 * 4)
+    assert np.all((x == 0.0) | (x == 1.0))
+
+
+def test_spatial_sir_metadata_includes_original_x_shape() -> None:
+    simulator = SpatialSIRSimulator(lattice_shape=(4, 5))
+    metadata = simulator.metadata()
+
+    assert metadata["original_x_shape"] == (3, 4, 5)
+
+
+def test_spatial_sir_is_compatible_with_generate_split_and_dataset() -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    mask = PointMCARMask(missing_fraction=0.25)
+
+    split = generate_split(simulator, mask, n=3, rng=make_rng(123))
+    dataset = generate_dataset(simulator, mask, n_train=3, n_val=2, n_test=1, seed=123)
+
+    assert split["x_full"].shape == (3, 3 * 4 * 4)
+    assert dataset["train"]["x_full"].shape == (3, 3 * 4 * 4)
+
+
+@pytest.mark.parametrize(
+    "mask_generator",
+    [
+        PointMCARMask(missing_fraction=0.25),
+        BlockMCARMask(missing_fraction=0.25, block_size=3),
+        CoordinateMARMask(missing_fraction=0.25),
+        SelfCensoringMNARMask(missing_fraction=0.25),
+    ],
+)
+def test_spatial_sir_spatial_masks_share_status_across_channels(mask_generator) -> None:
+    simulator = SpatialSIRSimulator(
+        lattice_shape=(4, 4),
+        measurement_time=0.05,
+        simulation_step_size=0.01,
+    )
+    split = generate_split(simulator, mask_generator, n=2, rng=make_rng(123))
+
+    mask = split["mask"].reshape((2, 3, 4, 4))
+
+    assert split["mask"].shape == split["x_full"].shape
+    assert np.all(mask[:, 0] == mask[:, 1])
+    assert np.all(mask[:, 1] == mask[:, 2])

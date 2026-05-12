@@ -14,11 +14,16 @@ from gapsbi.masks import (
     SelfCensoringMNARMask,
 )
 from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
+from gapsbi.simulators import SpatialSIRSimulator
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
-    parser.add_argument("--task", choices=["ricker", "oup", "glu", "glm"], default="ricker")
+    parser.add_argument(
+        "--task",
+        choices=["ricker", "oup", "glu", "glm", "spatial_sir"],
+        default="ricker",
+    )
     parser.add_argument(
         "--mask",
         choices=["point_mcar", "block_mcar", "self_censoring_mnar", "coordinate_mar"],
@@ -40,6 +45,10 @@ def main() -> None:
     parser.add_argument("--duration", type=int, default=100)
     parser.add_argument("--summary", choices=["sufficient", "raw"], default="sufficient")
     parser.add_argument("--simulator-scale", type=float, default=0.1)
+    parser.add_argument("--grid-size", type=int, default=16)
+    parser.add_argument("--measurement-time", type=float, default=0.25)
+    parser.add_argument("--simulation-step-size", type=float, default=0.01)
+    parser.add_argument("--initial-infection-rate", type=float, default=3.0)
     parser.add_argument("--n-train", type=int, default=1_000)
     parser.add_argument("--n-val", type=int, default=200)
     parser.add_argument("--n-test", type=int, default=200)
@@ -54,12 +63,19 @@ def main() -> None:
         simulator = OUPSimulator()
     elif args.task == "glu":
         simulator = GLUSimulator(dim=args.dim, simulator_scale=args.simulator_scale)
-    else:
+    elif args.task == "glm":
         simulator = GLMSimulator(
             dim=args.dim,
             prior_bound=args.prior_bound,
             duration=args.duration,
             summary=args.summary,
+        )
+    else:
+        simulator = SpatialSIRSimulator(
+            lattice_shape=(args.grid_size, args.grid_size),
+            measurement_time=args.measurement_time,
+            simulation_step_size=args.simulation_step_size,
+            initial_infection_rate=args.initial_infection_rate,
         )
     if args.mask == "point_mcar":
         mask_generator = PointMCARMask(missing_fraction=args.missing_fraction)

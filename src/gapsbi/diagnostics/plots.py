@@ -220,3 +220,65 @@ def plot_vector_dataset_examples(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path)
     plt.close(fig)
+
+
+def plot_spatial_sir_dataset_examples(
+    dataset_split: dict[str, np.ndarray],
+    indices: np.ndarray,
+    output_path: str | os.PathLike[str],
+    original_x_shape: tuple[int, int, int],
+    split_name: str = "train",
+    figsize: tuple[float, float] | None = None,
+) -> None:
+    """Plot selected flattened Spatial SIR examples and their cell masks."""
+    x_full = np.asarray(dataset_split["x_full"])
+    mask = np.asarray(dataset_split["mask"])
+    theta = np.asarray(dataset_split["theta"]) if "theta" in dataset_split else None
+    indices = np.asarray(indices, dtype=int)
+
+    if len(original_x_shape) != 3 or original_x_shape[0] != 3:
+        raise ValueError("original_x_shape must be (3, H, W).")
+    if x_full.ndim != 2 or mask.shape != x_full.shape:
+        raise ValueError("x_full and mask must have flattened shape (N, 3*H*W).")
+    if np.any(indices < 0) or np.any(indices >= x_full.shape[0]):
+        raise IndexError("indices must be valid rows of dataset_split.")
+
+    n_examples = int(indices.shape[0])
+    if n_examples < 1:
+        raise ValueError("indices must contain at least one example.")
+
+    if figsize is None:
+        figsize = (12.0, 3.0 * n_examples)
+
+    fig, axes = plt.subplots(n_examples, 4, figsize=figsize, squeeze=False)
+    channel_titles = ("susceptible", "infected", "recovered")
+
+    for row, index in enumerate(indices):
+        snapshot = x_full[index].reshape(original_x_shape)
+        mask_snapshot = mask[index].reshape(original_x_shape)
+        cell_mask = mask_snapshot.mean(axis=0)
+
+        for channel in range(3):
+            ax = axes[row, channel]
+            ax.imshow(snapshot[channel], vmin=0.0, vmax=1.0, cmap="viridis")
+            ax.set_title(channel_titles[channel])
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        ax = axes[row, 3]
+        ax.imshow(cell_mask, vmin=0.0, vmax=1.0, cmap="gray")
+        ax.set_title("observed mask")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        title = f"{split_name}[{index}]"
+        theta_title = format_theta(None if theta is None else theta[index])
+        if theta_title:
+            title = f"{title}\n{theta_title}"
+        axes[row, 0].set_ylabel(title)
+
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path)
+    plt.close(fig)

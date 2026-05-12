@@ -7,7 +7,11 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 
-from gapsbi.diagnostics.plots import plot_dataset_examples, plot_vector_dataset_examples
+from gapsbi.diagnostics.plots import (
+    plot_dataset_examples,
+    plot_spatial_sir_dataset_examples,
+    plot_vector_dataset_examples,
+)
 from gapsbi.io import load_gapsbi_hdf5
 
 
@@ -17,6 +21,9 @@ def resolve_plot_type(plot_type: str, metadata: dict) -> str:
         return plot_type
 
     task = metadata.get("task")
+    simulator_name = metadata.get("simulator", {}).get("name")
+    if task == "spatial_sir" or simulator_name == "spatial_sir":
+        return "spatial_sir"
     if task in {"glu", "glm"}:
         return "vector"
     return "timeseries"
@@ -31,7 +38,11 @@ def main() -> None:
     parser.add_argument("--output", default="outputs/dataset_examples.png")
     parser.add_argument("--log-y", action="store_true")
     parser.add_argument("--show", action="store_true")
-    parser.add_argument("--plot-type", choices=["timeseries", "vector", "auto"], default="auto")
+    parser.add_argument(
+        "--plot-type",
+        choices=["timeseries", "vector", "spatial_sir", "auto"],
+        default="auto",
+    )
     args = parser.parse_args()
 
     if args.num_examples < 1:
@@ -52,7 +63,17 @@ def main() -> None:
 
     output_path = Path(args.output)
     resolved_plot_type = resolve_plot_type(args.plot_type, metadata)
-    if resolved_plot_type == "vector":
+    if resolved_plot_type == "spatial_sir":
+        simulator_metadata = metadata.get("simulator", {})
+        original_x_shape = tuple(simulator_metadata["original_x_shape"])
+        plot_spatial_sir_dataset_examples(
+            split,
+            indices=indices,
+            output_path=output_path,
+            original_x_shape=original_x_shape,
+            split_name=args.split,
+        )
+    elif resolved_plot_type == "vector":
         if args.log_y:
             print("Warning: --log-y is ignored for vector plots.")
         plot_vector_dataset_examples(

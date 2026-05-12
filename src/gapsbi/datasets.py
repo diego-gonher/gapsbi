@@ -12,6 +12,8 @@ class SimulatorLike(Protocol):
 
     def simulate(self, theta: np.ndarray, rng: np.random.Generator) -> np.ndarray: ...
 
+    def metadata(self) -> dict: ...
+
 
 class MaskGeneratorLike(Protocol):
     def generate(
@@ -35,7 +37,7 @@ def generate_split(
     theta_rng, sim_rng, mask_rng = split_rng(rng, 3)
     theta = simulator.sample_theta(n, theta_rng)
     x_full = simulator.simulate(theta, sim_rng)
-    mask = mask_generator.generate(x_full, theta, mask_rng)
+    mask = _generate_mask(simulator, mask_generator, x_full, theta, mask_rng)
     x_obs = x_full * mask
 
     return {
@@ -62,3 +64,39 @@ def generate_dataset(
         "val": generate_split(simulator, mask_generator, n_val, split_rngs["val"]),
         "test": generate_split(simulator, mask_generator, n_test, split_rngs["test"]),
     }
+
+
+def _generate_mask(
+    simulator: SimulatorLike,
+    mask_generator: MaskGeneratorLike,
+    x_full: np.ndarray,
+    theta: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    metadata = simulator.metadata()
+    if metadata.get("name") != "spatial_sir":
+        return mask_generator.generate(x_full, theta, rng)
+    return _generate_spatial_sir_mask(metadata, mask_generator, x_full, theta, rng)
+
+
+def _generate_spatial_sir_mask(
+    simulator_metadata: dict,
+    mask_generator: MaskGeneratorLike,
+    x_full: np.ndarray,
+    theta: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    original_x_shape = tuple(simulator_metadata["original_x_shape"])
+    flatten = bool(simulator_metadata.get("flatten", True))
+    channels, height, width = original_x_shape
+    n = x_full.shape[0]
+
+    snapshots = x_full.reshape((n, channels, height, width)) if flatten else x_full
+    # Encode one scalar state per cell for value-dependent masks; shape-only masks ignore values.
+    cell_values = np.argmax(snapshots, axis=1).reshape((n, height * width))
+    cell_mask = mask_generator.generate(cell_values, theta, rng).reshape((n, height, width))
+    expanded_mask = np.broadcast_to(cell_mask[:, None, :, :], (n, channels, height, width))
+
+    if flatten:
+        return expanded_mask.reshape(x_full.shape).astype(np.int8)
+    return expanded_mask.astype(np.int8)

@@ -19,6 +19,7 @@ Implemented:
   - `OUPSimulator`
   - `GLUSimulator`
   - `GLMSimulator`
+  - `SpatialSIRSimulator`
 - Priors:
   - `UniformPrior`
   - `LogUniformPrior`
@@ -42,6 +43,7 @@ Implemented:
 - Diagnostics and plotting:
   - time-series example plots
   - vector example plots
+  - Spatial SIR snapshot plots
   - dataset plotting CLI
 - CLIs:
   - `scripts/generate_dataset.py`
@@ -50,7 +52,7 @@ Implemented:
 Not implemented yet:
 
 - observed-history MAR masks
-- Spatial SIR and Weinberg simulators
+- Weinberg simulator
 - registry helpers
 - baseline implementations
 - calibration diagnostics such as SBC/TARP
@@ -128,6 +130,27 @@ The package currently requires Python `>=3.11`.
 - raw mode output:
   - `x_shape = (duration,)`
   - binary spike train
+
+### Spatial SIR
+
+`SpatialSIRSimulator` implements a lightweight NumPy/SciPy spatial SIR lattice benchmark with one final snapshot observation.
+
+- `name`: `"spatial_sir"`
+- `theta = [beta, gamma]`
+- `theta_dim = 2`
+- default `lattice_shape = (16, 16)`
+- default `measurement_time = 0.25`
+- default `original_x_shape = (3, 16, 16)`
+- default `x_shape = (768,)`
+- prior:
+  - `beta ~ Uniform(0, 1)`
+  - `gamma ~ Uniform(0, 1)`
+- observation:
+  - one final susceptible/infected/recovered snapshot at `measurement_time`
+  - channels are flattened for the current HDF5 contract
+  - it is not a full time series
+
+For the default `16x16` lattice, `measurement_time=0.25` provides richer active infection structure than later times, which often let epidemics die out on the small grid.
 
 ## Missingness
 
@@ -275,9 +298,21 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --overwrite
 ```
 
+Example Spatial SIR dataset with coordinate-dependent MAR:
+
+```bash
+PYTHONPATH=src python scripts/generate_dataset.py \
+  --task spatial_sir \
+  --grid-size 16 \
+  --mask coordinate_mar \
+  --missing-fraction 0.25 \
+  --output data/spatial_sir_coordinate_mar_25.h5 \
+  --overwrite
+```
+
 Supported generation options:
 
-- `--task {ricker,oup,glu,glm}`
+- `--task {ricker,oup,glu,glm,spatial_sir}`
 - `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar}`
 - `--missing-fraction`
 - `--block-size`
@@ -297,8 +332,11 @@ Task-specific options:
 
 - GLU: `--dim`, `--simulator-scale`
 - GLM: `--dim`, `--prior-bound`, `--duration`, `--summary {sufficient,raw}`
+- Spatial SIR: `--grid-size`, `--measurement-time`, `--simulation-step-size`, `--initial-infection-rate`
 - MAR masks: `--mar-mode`, `--mar-floor`, `--mar-max-probability`, `--mar-middle-width`
 - MNAR masks: `--mnar-score-transform {identity,log1p,abs}`
+
+For Spatial SIR, masking is applied at the spatial cell level. A single cell-level mask is expanded across the susceptible, infected, and recovered channels before flattening, so all three state channels for a cell are observed or missing together.
 
 ## Plot Datasets
 
@@ -315,15 +353,26 @@ PYTHONPATH=src python scripts/plot_dataset_examples.py \
   --output outputs/ricker_examples.png
 ```
 
+Spatial SIR plotting example:
+
+```bash
+PYTHONPATH=src python scripts/plot_dataset_examples.py \
+  --input data/spatial_sir_coordinate_mar_25.h5 \
+  --plot-type spatial_sir \
+  --num-examples 4 \
+  --output outputs/spatial_sir_examples.png
+```
+
 The plotting CLI supports:
 
 - `--plot-type auto`
 - `--plot-type timeseries`
 - `--plot-type vector`
+- `--plot-type spatial_sir`
 - `--show`
 - `--log-y`
 
-`auto` chooses vector plots for metadata task `glu` or `glm`; otherwise it uses time-series plots. Use `--log-y` for time-series plots such as Ricker if desired.
+`auto` chooses spatial plots for metadata task `spatial_sir`, vector plots for metadata task `glu` or `glm`, and time-series plots otherwise. Use `--log-y` for time-series plots such as Ricker if desired.
 
 ## Python API Example
 
@@ -367,7 +416,7 @@ The test suite currently covers:
 - RNG reproducibility
 - prior sampling and log probabilities
 - simulator shapes and reproducibility
-- MCAR and MNAR masks
+- MCAR, MAR, and MNAR masks
 - HDF5 contract validation and roundtrip behavior
 - dataset generation CLI behavior
 - plotting helper behavior
