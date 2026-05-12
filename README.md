@@ -3,7 +3,7 @@ A repository to create benchmark datasets for simulation-based inference problem
 
 GAPSBI-core (v1): Benchmark Design
 
-Goal:
+## Goal:
 Build a benchmark for simulation-based inference under missing data, focusing on:
 - posterior calibration (SBC, TARP)
 - robustness under MCAR / MAR / MNAR
@@ -11,9 +11,9 @@ Build a benchmark for simulation-based inference under missing data, focusing on
 
 --------------------------------------------------
 
-Benchmark Problems (6 total)
+## Benchmark Problems (6 total)
 
-Core (from RISE-style SBI benchmarks):
+### Core (from RISE-style SBI benchmarks):
 
 1. Ricker model
    - Nonlinear time series, low-dimensional θ
@@ -31,7 +31,7 @@ Core (from RISE-style SBI benchmarks):
    - Gaussian vector model, ~10D θ
    - Controlled high-dimensional baseline
 
-New additions (GAPSBI-specific):
+### New additions (GAPSBI-specific):
 
 5. Spatial SIR (2D grid)
    - Spatiotemporal epidemic dynamics
