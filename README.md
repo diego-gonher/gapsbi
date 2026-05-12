@@ -29,6 +29,7 @@ Implemented:
 - Mask generators:
   - `PointMCARMask`
   - `BlockMCARMask`
+  - `CoordinateMARMask`
   - `SelfCensoringMNARMask`
   - `ValueDependentMNARMask` alias
 - Dataset generation:
@@ -48,7 +49,7 @@ Implemented:
 
 Not implemented yet:
 
-- MAR masks
+- observed-history MAR masks
 - Spatial SIR and Weinberg simulators
 - registry helpers
 - baseline implementations
@@ -135,6 +136,10 @@ Implemented MCAR masks:
 - `PointMCARMask`: independent Bernoulli masking at each entry.
 - `BlockMCARMask`: contiguous missing blocks for 1D vectors or batched 1D data.
 
+Implemented MAR masks:
+
+- `CoordinateMARMask`: coordinate/time-dependent missingness. It depends only on index metadata along the last axis, not on `x_full` values, so it is MAR rather than MNAR. Modes are `increasing`, `decreasing`, and `middle`. The requested `missing_fraction` is approximately the realized missing fraction before probability clipping; realized missingness can be lower when `max_probability` clips probabilities.
+
 Implemented MNAR masks:
 
 - `SelfCensoringMNARMask`: value-dependent self-censoring. Each sample is optionally transformed, min/max shifted into `[0, 1]`, then higher normalized values receive higher missingness probability. Constant samples use score `0.5` everywhere to avoid division instability.
@@ -152,7 +157,7 @@ Mask convention:
 - `1`: observed
 - `0`: missing
 
-MAR generators are planned but not implemented yet.
+Additional MAR generators using richer observed context are planned but not implemented yet.
 
 ## HDF5 Dataset Contract
 
@@ -258,12 +263,28 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --overwrite
 ```
 
+Example OUP dataset with coordinate-dependent MAR:
+
+```bash
+PYTHONPATH=src python scripts/generate_dataset.py \
+  --task oup \
+  --mask coordinate_mar \
+  --missing-fraction 0.25 \
+  --mar-mode increasing \
+  --output data/oup_coordinate_mar_25.h5 \
+  --overwrite
+```
+
 Supported generation options:
 
 - `--task {ricker,oup,glu,glm}`
-- `--mask {point_mcar,block_mcar,self_censoring_mnar}`
+- `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar}`
 - `--missing-fraction`
 - `--block-size`
+- `--mar-mode {increasing,decreasing,middle}`
+- `--mar-floor`
+- `--mar-max-probability`
+- `--mar-middle-width`
 - `--mnar-score-transform {identity,log1p,abs}`
 - `--n-train`
 - `--n-val`
@@ -276,6 +297,7 @@ Task-specific options:
 
 - GLU: `--dim`, `--simulator-scale`
 - GLM: `--dim`, `--prior-bound`, `--duration`, `--summary {sufficient,raw}`
+- MAR masks: `--mar-mode`, `--mar-floor`, `--mar-max-probability`, `--mar-middle-width`
 - MNAR masks: `--mnar-score-transform {identity,log1p,abs}`
 
 ## Plot Datasets

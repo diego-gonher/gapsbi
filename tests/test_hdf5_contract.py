@@ -173,3 +173,46 @@ def test_generate_dataset_cli_supports_ricker_log1p_mnar(tmp_path) -> None:
     _, metadata = load_gapsbi_hdf5(output_path)
     assert metadata["mask"]["name"] == "self_censoring_mnar"
     assert metadata["mask"]["score_transform"] == "log1p"
+
+
+def test_generate_dataset_cli_supports_coordinate_mar(tmp_path) -> None:
+    output_path = tmp_path / "oup_coordinate_mar.h5"
+    repo_root = Path(__file__).parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_dataset.py",
+            "--task",
+            "oup",
+            "--mask",
+            "coordinate_mar",
+            "--missing-fraction",
+            "0.25",
+            "--mar-mode",
+            "increasing",
+            "--n-train",
+            "2",
+            "--n-val",
+            "1",
+            "--n-test",
+            "1",
+            "--seed",
+            "123",
+            "--output",
+            str(output_path),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+    assert "Saved:" in result.stdout
+    _, metadata = load_gapsbi_hdf5(output_path)
+    assert metadata["mask"]["name"] == "coordinate_mar"
+    assert metadata["mask"]["mode"] == "increasing"

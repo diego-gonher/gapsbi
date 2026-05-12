@@ -7,7 +7,12 @@ import numpy as np
 
 from gapsbi.datasets import generate_dataset
 from gapsbi.io import save_gapsbi_hdf5
-from gapsbi.masks import BlockMCARMask, PointMCARMask, SelfCensoringMNARMask
+from gapsbi.masks import (
+    BlockMCARMask,
+    CoordinateMARMask,
+    PointMCARMask,
+    SelfCensoringMNARMask,
+)
 from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
 
 
@@ -16,7 +21,7 @@ def main() -> None:
     parser.add_argument("--task", choices=["ricker", "oup", "glu", "glm"], default="ricker")
     parser.add_argument(
         "--mask",
-        choices=["point_mcar", "block_mcar", "self_censoring_mnar"],
+        choices=["point_mcar", "block_mcar", "self_censoring_mnar", "coordinate_mar"],
         default="point_mcar",
     )
     parser.add_argument("--missing-fraction", type=float, default=0.25)
@@ -26,6 +31,10 @@ def main() -> None:
         choices=["identity", "log1p", "abs"],
         default="identity",
     )
+    parser.add_argument("--mar-mode", choices=["increasing", "decreasing", "middle"], default="increasing")
+    parser.add_argument("--mar-floor", type=float, default=0.05)
+    parser.add_argument("--mar-max-probability", type=float, default=0.95)
+    parser.add_argument("--mar-middle-width", type=float, default=0.2)
     parser.add_argument("--dim", type=int, default=10)
     parser.add_argument("--prior-bound", type=float, default=2.0)
     parser.add_argument("--duration", type=int, default=100)
@@ -59,10 +68,18 @@ def main() -> None:
             missing_fraction=args.missing_fraction,
             block_size=args.block_size,
         )
-    else:
+    elif args.mask == "self_censoring_mnar":
         mask_generator = SelfCensoringMNARMask(
             missing_fraction=args.missing_fraction,
             score_transform=args.mnar_score_transform,
+        )
+    else:
+        mask_generator = CoordinateMARMask(
+            missing_fraction=args.missing_fraction,
+            mode=args.mar_mode,
+            floor=args.mar_floor,
+            max_probability=args.mar_max_probability,
+            middle_width=args.mar_middle_width,
         )
 
     dataset = generate_dataset(

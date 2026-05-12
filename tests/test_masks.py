@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from gapsbi.masks import BlockMCARMask, PointMCARMask, SelfCensoringMNARMask
+from gapsbi.masks import (
+    BlockMCARMask,
+    CoordinateMARMask,
+    PointMCARMask,
+    SelfCensoringMNARMask,
+)
 from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
 
 
@@ -306,3 +311,143 @@ def test_self_censoring_mnar_metadata_includes_score_transform() -> None:
 def test_self_censoring_mnar_invalid_score_transform_raises() -> None:
     with pytest.raises(ValueError, match="score_transform must be one of"):
         SelfCensoringMNARMask(missing_fraction=0.5, score_transform="sqrt")
+
+
+def test_coordinate_mar_mask_preserves_unbatched_shape_and_is_binary_int8() -> None:
+    x_full = np.ones(25)
+    mask = CoordinateMARMask(missing_fraction=0.25).generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+
+    assert mask.shape == x_full.shape
+    assert mask.dtype == np.int8
+    _assert_binary(mask)
+
+
+def test_coordinate_mar_mask_preserves_batched_shape_and_is_binary_int8() -> None:
+    x_full = np.ones((4, 25))
+    mask = CoordinateMARMask(missing_fraction=0.25).generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+
+    assert mask.shape == x_full.shape
+    assert mask.dtype == np.int8
+    _assert_binary(mask)
+
+
+def test_coordinate_mar_same_seed_gives_same_mask() -> None:
+    x_full = np.ones((4, 25))
+    generator = CoordinateMARMask(missing_fraction=0.25)
+
+    mask1 = generator.generate(x_full, None, np.random.default_rng(123))
+    mask2 = generator.generate(x_full, None, np.random.default_rng(123))
+
+    np.testing.assert_array_equal(mask1, mask2)
+
+
+def test_coordinate_mar_increasing_mode_masks_later_coordinates_more() -> None:
+    x_full = np.ones((5_000, 20))
+    mask = CoordinateMARMask(missing_fraction=0.4, mode="increasing").generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+    missing_rate_by_coord = np.mean(mask == 0, axis=0)
+
+    assert missing_rate_by_coord[-1] > missing_rate_by_coord[0]
+    assert missing_rate_by_coord[-1] > missing_rate_by_coord[5]
+
+
+def test_coordinate_mar_decreasing_mode_masks_earlier_coordinates_more() -> None:
+    x_full = np.ones((5_000, 20))
+    mask = CoordinateMARMask(missing_fraction=0.4, mode="decreasing").generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+    missing_rate_by_coord = np.mean(mask == 0, axis=0)
+
+    assert missing_rate_by_coord[0] > missing_rate_by_coord[-1]
+    assert missing_rate_by_coord[0] > missing_rate_by_coord[-6]
+
+
+def test_coordinate_mar_middle_mode_masks_middle_coordinates_more() -> None:
+    x_full = np.ones((5_000, 21))
+    mask = CoordinateMARMask(
+        missing_fraction=0.4,
+        mode="middle",
+        middle_width=0.15,
+    ).generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+    missing_rate_by_coord = np.mean(mask == 0, axis=0)
+
+    assert missing_rate_by_coord[10] > missing_rate_by_coord[0]
+    assert missing_rate_by_coord[10] > missing_rate_by_coord[-1]
+
+
+def test_coordinate_mar_does_not_depend_on_x_values() -> None:
+    x_a = np.zeros((4, 25))
+    x_b = np.arange(100, dtype=float).reshape(4, 25) * 1000.0
+    generator = CoordinateMARMask(missing_fraction=0.25, mode="increasing")
+
+    mask_a = generator.generate(x_a, None, np.random.default_rng(123))
+    mask_b = generator.generate(x_b, None, np.random.default_rng(123))
+
+    np.testing.assert_array_equal(mask_a, mask_b)
+
+
+def test_coordinate_mar_invalid_mode_raises() -> None:
+    with pytest.raises(ValueError, match="mode must be one of"):
+        CoordinateMARMask(missing_fraction=0.25, mode="late")
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"missing_fraction": -0.1}, "missing_fraction must be in"),
+        ({"missing_fraction": 1.1}, "missing_fraction must be in"),
+        ({"missing_fraction": 0.25, "floor": -0.1}, "floor must be >= 0"),
+        (
+            {"missing_fraction": 0.25, "max_probability": -0.1},
+            "max_probability must be in",
+        ),
+        (
+            {"missing_fraction": 0.25, "max_probability": 1.1},
+            "max_probability must be in",
+        ),
+        (
+            {"missing_fraction": 0.25, "middle_width": 0.0},
+            "middle_width must be > 0",
+        ),
+    ],
+)
+def test_coordinate_mar_invalid_parameters_raise(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        CoordinateMARMask(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "simulator",
+    [
+        RickerSimulator(T=12),
+        OUPSimulator(n=12),
+        GLUSimulator(dim=6),
+        GLMSimulator(dim=6, duration=20),
+    ],
+)
+def test_coordinate_mar_is_compatible_with_implemented_simulators(simulator) -> None:
+    rng = np.random.default_rng(123)
+    theta = simulator.sample_theta(3, rng)
+    x_full = simulator.simulate(theta, rng)
+    mask = CoordinateMARMask(missing_fraction=0.25).generate(x_full, theta, rng)
+
+    assert mask.shape == x_full.shape
+    assert mask.dtype == np.int8
+    _assert_binary(mask)
