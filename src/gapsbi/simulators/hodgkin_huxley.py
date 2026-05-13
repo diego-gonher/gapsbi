@@ -1,3 +1,4 @@
+# reference code: https://github.com/sbi-dev/sbi/blob/1b268b836079d384b57bd80636ad7e16ec84ebff/examples/HH_helper_functions.py
 from typing import Any
 
 import numpy as np
