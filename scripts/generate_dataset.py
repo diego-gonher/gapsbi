@@ -65,6 +65,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--output", required=True)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--progress", dest="progress", action="store_true", default=True)
+    parser.add_argument("--no-progress", dest="progress", action="store_false")
     args = parser.parse_args()
 
     if args.task == "ricker":
@@ -123,6 +125,7 @@ def main() -> None:
         n_val=args.n_val,
         n_test=args.n_test,
         seed=args.seed,
+        progress=args.progress,
     )
     metadata = {
         "task": args.task,

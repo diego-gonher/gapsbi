@@ -239,6 +239,14 @@ Metadata is stored as file-level HDF5 attributes. Nested simulator and mask meta
 
 Use `scripts/generate_dataset.py`.
 
+Dataset generation shows per-simulation progress bars for each split by default using `tqdm`:
+
+- `Generating train`
+- `Generating val`
+- `Generating test`
+
+Use `--no-progress` to disable progress output, which is useful for tests and scripted runs.
+
 Example Ricker dataset with point MCAR:
 
 ```bash
@@ -365,6 +373,8 @@ Supported generation options:
 - `--seed`
 - `--output`
 - `--overwrite`
+- `--progress`
+- `--no-progress`
 
 Task-specific options:
 
