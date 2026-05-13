@@ -501,3 +501,161 @@ data/
 ```
 
 The codebase is intentionally lightweight at this stage and uses NumPy-first implementations for dataset generation.
+
+## GAPSBI Canonical Dataset Summary (v1)
+
+Dataset generation logs and effective missing fractions measured from generated datasets.
+
+---
+
+### Global Dataset Configuration
+
+| Setting             | Value                           |
+| ------------------- | ------------------------------- |
+| Train size          | 20,000                          |
+| Validation size     | 2,000                           |
+| Test size           | 2,000                           |
+| Seed                | 123                             |
+| Missingness regimes | MCAR, MAR, MNAR                 |
+| Missingness levels  | 10%, 25%, 50%                   |
+| MAR subtype         | coordinate-dependent increasing |
+| MNAR subtype        | self-censoring                  |
+| Spatial SIR grid    | 16 × 16                         |
+| HH downsample       | 20                              |
+| HH duration         | 120                             |
+| HH output length    | 601                             |
+
+---
+
+#### GLU
+
+| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
+| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
+| MCAR   | 0.10        | 0.098 | 10    | 10    | none      | ~166k sim/s   |
+| MCAR   | 0.25        | 0.248 | 10    | 10    | none      | ~166k sim/s   |
+| MCAR   | 0.50        | 0.500 | 10    | 10    | none      | ~166k sim/s   |
+| MAR    | 0.10        | 0.100 | 10    | 10    | none      | ~69k sim/s    |
+| MAR    | 0.25        | 0.249 | 10    | 10    | none      | ~69k sim/s    |
+| MAR    | 0.50        | 0.499 | 10    | 10    | none      | ~69k sim/s    |
+| MNAR   | 0.10        | 0.050 | 10    | 10    | identity  | ~84k sim/s    |
+| MNAR   | 0.25        | 0.125 | 10    | 10    | identity  | ~84k sim/s    |
+| MNAR   | 0.50        | 0.249 | 10    | 10    | identity  | ~85k sim/s    |
+
+Notes:
+
+* GLU MNAR gives approximately:
+  ε_eff ≈ 0.5 ε
+* Uses raw vector observations.
+
+---
+
+#### GLM (raw)
+
+| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
+| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
+| MCAR   | 0.10        | 0.100 | 10    | 100   | none      | ~79k sim/s    |
+| MCAR   | 0.25        | 0.250 | 10    | 100   | none      | ~79k sim/s    |
+| MCAR   | 0.50        | 0.500 | 10    | 100   | none      | ~79k sim/s    |
+| MAR    | 0.10        | 0.100 | 10    | 100   | none      | ~46k sim/s    |
+| MAR    | 0.25        | 0.250 | 10    | 100   | none      | ~47k sim/s    |
+| MAR    | 0.50        | 0.500 | 10    | 100   | none      | ~47k sim/s    |
+| MNAR   | 0.10        | 0.050 | 10    | 100   | identity  | ~53k sim/s    |
+| MNAR   | 0.25        | 0.125 | 10    | 100   | identity  | ~52k sim/s    |
+| MNAR   | 0.50        | 0.250 | 10    | 100   | identity  | ~52k sim/s    |
+
+Notes:
+
+* GLM MNAR also gives:
+  ε_eff ≈ 0.5 ε
+* Using raw time series rather than summary statistics.
+
+---
+
+#### OUP
+
+| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
+| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
+| MCAR   | 0.10        | 0.099 | 2     | 25    | none      | ~12.6k sim/s  |
+| MCAR   | 0.25        | 0.250 | 2     | 25    | none      | ~12.6k sim/s  |
+| MCAR   | 0.50        | 0.500 | 2     | 25    | none      | ~12.5k sim/s  |
+| MAR    | 0.10        | 0.100 | 2     | 25    | none      | ~11.3k sim/s  |
+| MAR    | 0.25        | 0.250 | 2     | 25    | none      | ~11.4k sim/s  |
+| MAR    | 0.50        | 0.500 | 2     | 25    | none      | ~11.4k sim/s  |
+| MNAR   | 0.10        | 0.025 | 2     | 25    | identity  | ~11.7k sim/s  |
+| MNAR   | 0.25        | 0.062 | 2     | 25    | identity  | ~11.7k sim/s  |
+| MNAR   | 0.50        | 0.123 | 2     | 25    | identity  | ~11.7k sim/s  |
+
+Notes:
+
+* OUP MNAR gives:
+  ε_eff ≈ 0.25 ε
+* Strong temporal correlation reduces effective censoring.
+
+---
+
+#### Ricker
+
+| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
+| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
+| MCAR   | 0.10        | 0.100 | 2     | 100   | none      | ~850 sim/s    |
+| MCAR   | 0.25        | 0.250 | 2     | 100   | none      | ~850 sim/s    |
+| MCAR   | 0.50        | 0.500 | 2     | 100   | none      | ~850 sim/s    |
+| MAR    | 0.10        | 0.100 | 2     | 100   | none      | ~845 sim/s    |
+| MAR    | 0.25        | 0.250 | 2     | 100   | none      | ~850 sim/s    |
+| MAR    | 0.50        | 0.500 | 2     | 100   | none      | ~850 sim/s    |
+| MNAR   | 0.10        | 0.031 | 2     | 100   | log1p     | ~850 sim/s    |
+| MNAR   | 0.25        | 0.078 | 2     | 100   | log1p     | ~845 sim/s    |
+| MNAR   | 0.50        | 0.156 | 2     | 100   | log1p     | ~840 sim/s    |
+
+Notes:
+
+* Ricker required:
+  log1p score transform
+* Prevents extremely skewed self-censoring probabilities due to count-like heavy tails.
+* Gives:
+  ε_eff ≈ 0.31 ε
+
+---
+
+#### Spatial SIR
+
+| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
+| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
+| MCAR   | 0.10        | 0.100 | 2     | 768   | none      | ~2.45k sim/s  |
+| MCAR   | 0.25        | 0.250 | 2     | 768   | none      | ~2.46k sim/s  |
+| MCAR   | 0.50        | 0.500 | 2     | 768   | none      | ~2.45k sim/s  |
+| MAR    | 0.10        | 0.100 | 2     | 768   | none      | ~2.40k sim/s  |
+| MAR    | 0.25        | 0.250 | 2     | 768   | none      | ~2.39k sim/s  |
+| MAR    | 0.50        | 0.500 | 2     | 768   | none      | ~2.39k sim/s  |
+| MNAR   | 0.10        | 0.024 | 2     | 768   | identity  | ~2.41k sim/s  |
+| MNAR   | 0.25        | 0.059 | 2     | 768   | identity  | ~2.37k sim/s  |
+| MNAR   | 0.50        | 0.118 | 2     | 768   | identity  | ~2.41k sim/s  |
+
+Notes:
+
+* x corresponds to flattened:
+  (3, 16, 16)
+* Shared spatial mask applied across S/I/R channels.
+* Spatial SIR MNAR gives:
+  ε_eff ≈ 0.24 ε
+* Similar behavior to OUP due to strong structured correlations and sparse informative regions.
+
+---
+
+#### Hodgkin–Huxley (HH)
+
+| Setting                      | Value      |
+| ---------------------------- | ---------- |
+| θ dim                        | 2          |
+| x dim                        | 601        |
+| Downsample                   | 20         |
+| Duration                     | 120        |
+| dt                           | 0.01       |
+| Approximate generation speed | ~5.5 sim/s |
+
+Notes:
+
+* HH is substantially slower than all other benchmark problems.
+* Full canonical generation of all 9 datasets is expected to take approximately:
+  ~12 hours locally.
+* Uses raw voltage traces.
