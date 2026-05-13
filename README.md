@@ -20,6 +20,7 @@ Implemented:
   - `GLUSimulator`
   - `GLMSimulator`
   - `SpatialSIRSimulator`
+  - `HodgkinHuxleySimulator`
 - Priors:
   - `UniformPrior`
   - `LogUniformPrior`
@@ -151,6 +152,27 @@ The package currently requires Python `>=3.11`.
   - it is not a full time series
 
 For the default `16x16` lattice, `measurement_time=0.25` provides richer active infection structure than later times, which often let epidemics die out on the small grid.
+
+### Hodgkin-Huxley
+
+`HodgkinHuxleySimulator` implements a NumPy port of the Hodgkin-Huxley reference simulator with explicit RNG noise and downsampled raw voltage traces.
+
+- `name`: `"hodgkin_huxley"`
+- `theta = [g_Na, g_K]`
+- `theta_dim = 2`
+- prior:
+  - `g_Na ~ Uniform(0.5, 80.0)`
+  - `g_K ~ Uniform(1e-4, 15.0)`
+- default raw simulation:
+  - `duration = 120.0` ms
+  - `dt = 0.01` ms
+  - `t_on = 10.0` ms
+  - `curr_level = 5e-4`
+  - `downsample = 20`
+- default `x_shape` is approximately `(601,)`
+- output is a downsampled raw voltage trace in `float32`
+
+Raw mode is the default because missingness over time is meaningful for voltage traces. Summary mode is not implemented yet.
 
 ## Missingness
 
@@ -310,9 +332,25 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --overwrite
 ```
 
+Example Hodgkin-Huxley dataset with block MCAR:
+
+```bash
+PYTHONPATH=src python scripts/generate_dataset.py \
+  --task hodgkin_huxley \
+  --mask block_mcar \
+  --missing-fraction 0.25 \
+  --block-size 20 \
+  --n-train 100 \
+  --n-val 20 \
+  --n-test 20 \
+  --seed 123 \
+  --output data/hodgkin_huxley_block_mcar_25.h5 \
+  --overwrite
+```
+
 Supported generation options:
 
-- `--task {ricker,oup,glu,glm,spatial_sir}`
+- `--task {ricker,oup,glu,glm,spatial_sir,hodgkin_huxley}`
 - `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar}`
 - `--missing-fraction`
 - `--block-size`
@@ -333,6 +371,7 @@ Task-specific options:
 - GLU: `--dim`, `--simulator-scale`
 - GLM: `--dim`, `--prior-bound`, `--duration`, `--summary {sufficient,raw}`
 - Spatial SIR: `--grid-size`, `--measurement-time`, `--simulation-step-size`, `--initial-infection-rate`
+- Hodgkin-Huxley: `--duration`, `--dt`, `--t-on`, `--curr-level`, `--downsample`
 - MAR masks: `--mar-mode`, `--mar-floor`, `--mar-max-probability`, `--mar-middle-width`
 - MNAR masks: `--mnar-score-transform {identity,log1p,abs}`
 
@@ -361,6 +400,16 @@ PYTHONPATH=src python scripts/plot_dataset_examples.py \
   --plot-type spatial_sir \
   --num-examples 4 \
   --output outputs/spatial_sir_examples.png
+```
+
+Hodgkin-Huxley plotting example:
+
+```bash
+PYTHONPATH=src python scripts/plot_dataset_examples.py \
+  --input data/hodgkin_huxley_block_mcar_25.h5 \
+  --plot-type timeseries \
+  --num-examples 4 \
+  --output outputs/hodgkin_huxley_examples.png
 ```
 
 The plotting CLI supports:

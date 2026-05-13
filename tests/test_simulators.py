@@ -12,6 +12,7 @@ from gapsbi.rng import make_rng
 from gapsbi.simulators import (
     GLMSimulator,
     GLUSimulator,
+    HodgkinHuxleySimulator,
     OUPSimulator,
     RickerSimulator,
     SpatialSIRSimulator,
@@ -416,3 +417,116 @@ def test_spatial_sir_spatial_masks_share_status_across_channels(mask_generator) 
     assert split["mask"].shape == split["x_full"].shape
     assert np.all(mask[:, 0] == mask[:, 1])
     assert np.all(mask[:, 1] == mask[:, 2])
+
+
+def test_hodgkin_huxley_basic_properties() -> None:
+    simulator = HodgkinHuxleySimulator()
+
+    assert simulator.theta_dim == 2
+    assert simulator.x_shape == (601,)
+
+
+def test_hodgkin_huxley_simulate_single_shape_dtype_and_finite() -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    x = simulator.simulate(np.array([20.0, 5.0]), np.random.default_rng(123))
+
+    assert x.shape == simulator.x_shape
+    assert x.dtype == np.float32
+    assert np.all(np.isfinite(x))
+
+
+def test_hodgkin_huxley_simulate_batch_shape() -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    theta = np.array([[20.0, 5.0], [40.0, 8.0]])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (2, *simulator.x_shape)
+
+
+def test_hodgkin_huxley_same_seed_is_reproducible() -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    theta = np.array([[20.0, 5.0], [40.0, 8.0]])
+    rng_a = np.random.default_rng(123)
+    rng_b = np.random.default_rng(123)
+
+    theta_a = simulator.sample_theta(3, rng_a)
+    theta_b = simulator.sample_theta(3, rng_b)
+    x_a = simulator.simulate(theta, rng_a)
+    x_b = simulator.simulate(theta, rng_b)
+
+    np.testing.assert_array_equal(theta_a, theta_b)
+    np.testing.assert_array_equal(x_a, x_b)
+
+
+def test_hodgkin_huxley_different_theta_produces_valid_outputs() -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    theta = np.array([[0.5, 1e-4], [80.0, 15.0]])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (2, *simulator.x_shape)
+    assert np.all(np.isfinite(x))
+
+
+def test_hodgkin_huxley_metadata_includes_downsample_and_full_trace_length() -> None:
+    simulator = HodgkinHuxleySimulator()
+    metadata = simulator.metadata()
+
+    assert metadata["downsample"] == 20
+    assert metadata["full_trace_length"] == 12001
+
+
+def test_hodgkin_huxley_is_compatible_with_generate_split_and_dataset() -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    mask = PointMCARMask(missing_fraction=0.25)
+
+    split = generate_split(simulator, mask, n=3, rng=make_rng(123))
+    dataset = generate_dataset(simulator, mask, n_train=3, n_val=2, n_test=1, seed=123)
+
+    assert split["x_full"].shape == (3, *simulator.x_shape)
+    assert dataset["train"]["x_full"].shape == (3, *simulator.x_shape)
+
+
+@pytest.mark.parametrize(
+    "mask_generator",
+    [
+        PointMCARMask(missing_fraction=0.25),
+        BlockMCARMask(missing_fraction=0.25, block_size=3),
+        CoordinateMARMask(missing_fraction=0.25),
+        SelfCensoringMNARMask(missing_fraction=0.25),
+    ],
+)
+def test_hodgkin_huxley_is_compatible_with_current_masks(mask_generator) -> None:
+    simulator = HodgkinHuxleySimulator(
+        duration=1.0,
+        dt=0.05,
+        t_on=0.2,
+        downsample=2,
+    )
+    split = generate_split(simulator, mask_generator, n=2, rng=make_rng(123))
+
+    assert split["mask"].shape == split["x_full"].shape

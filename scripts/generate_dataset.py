@@ -13,15 +13,21 @@ from gapsbi.masks import (
     PointMCARMask,
     SelfCensoringMNARMask,
 )
-from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
-from gapsbi.simulators import SpatialSIRSimulator
+from gapsbi.simulators import (
+    GLMSimulator,
+    GLUSimulator,
+    HodgkinHuxleySimulator,
+    OUPSimulator,
+    RickerSimulator,
+    SpatialSIRSimulator,
+)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
     parser.add_argument(
         "--task",
-        choices=["ricker", "oup", "glu", "glm", "spatial_sir"],
+        choices=["ricker", "oup", "glu", "glm", "spatial_sir", "hodgkin_huxley"],
         default="ricker",
     )
     parser.add_argument(
@@ -42,9 +48,13 @@ def main() -> None:
     parser.add_argument("--mar-middle-width", type=float, default=0.2)
     parser.add_argument("--dim", type=int, default=10)
     parser.add_argument("--prior-bound", type=float, default=2.0)
-    parser.add_argument("--duration", type=int, default=100)
+    parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--summary", choices=["sufficient", "raw"], default="sufficient")
     parser.add_argument("--simulator-scale", type=float, default=0.1)
+    parser.add_argument("--dt", type=float, default=0.01)
+    parser.add_argument("--t-on", type=float, default=10.0)
+    parser.add_argument("--curr-level", type=float, default=5e-4)
+    parser.add_argument("--downsample", type=int, default=20)
     parser.add_argument("--grid-size", type=int, default=16)
     parser.add_argument("--measurement-time", type=float, default=0.25)
     parser.add_argument("--simulation-step-size", type=float, default=0.01)
@@ -67,15 +77,23 @@ def main() -> None:
         simulator = GLMSimulator(
             dim=args.dim,
             prior_bound=args.prior_bound,
-            duration=args.duration,
+            duration=100 if args.duration is None else args.duration,
             summary=args.summary,
         )
-    else:
+    elif args.task == "spatial_sir":
         simulator = SpatialSIRSimulator(
             lattice_shape=(args.grid_size, args.grid_size),
             measurement_time=args.measurement_time,
             simulation_step_size=args.simulation_step_size,
             initial_infection_rate=args.initial_infection_rate,
+        )
+    else:
+        simulator = HodgkinHuxleySimulator(
+            duration=120.0 if args.duration is None else args.duration,
+            dt=args.dt,
+            t_on=args.t_on,
+            curr_level=args.curr_level,
+            downsample=args.downsample,
         )
     if args.mask == "point_mcar":
         mask_generator = PointMCARMask(missing_fraction=args.missing_fraction)

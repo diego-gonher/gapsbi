@@ -265,3 +265,57 @@ def test_generate_dataset_cli_supports_spatial_sir(tmp_path) -> None:
     assert metadata["task"] == "spatial_sir"
     assert metadata["simulator"]["original_x_shape"] == [3, 4, 4]
     assert metadata["mask"]["name"] == "coordinate_mar"
+
+
+def test_generate_dataset_cli_supports_hodgkin_huxley(tmp_path) -> None:
+    output_path = tmp_path / "hodgkin_huxley_block_mcar.h5"
+    repo_root = Path(__file__).parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_dataset.py",
+            "--task",
+            "hodgkin_huxley",
+            "--duration",
+            "1.0",
+            "--dt",
+            "0.05",
+            "--t-on",
+            "0.2",
+            "--downsample",
+            "2",
+            "--mask",
+            "block_mcar",
+            "--missing-fraction",
+            "0.25",
+            "--block-size",
+            "3",
+            "--n-train",
+            "3",
+            "--n-val",
+            "2",
+            "--n-test",
+            "2",
+            "--seed",
+            "123",
+            "--output",
+            str(output_path),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert output_path.exists()
+    assert "Saved:" in result.stdout
+    dataset, metadata = load_gapsbi_hdf5(output_path)
+    validate_gapsbi_dataset(dataset)
+    assert metadata["task"] == "hodgkin_huxley"
+    assert metadata["simulator"]["downsample"] == 2
+    assert metadata["simulator"]["full_trace_length"] == 21
+    assert metadata["mask"]["name"] == "block_mcar"
