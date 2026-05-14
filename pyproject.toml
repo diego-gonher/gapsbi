@@ -10,7 +10,10 @@ dependencies = [
     "h5py",
     "matplotlib",
     "numpy",
+    "scikit-learn",
     "scipy",
+    "sbi",
+    "torch",
     "tqdm",
 ]
 

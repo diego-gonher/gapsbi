@@ -11,6 +11,10 @@ dependencies:
   - scipy
   - h5py
 
+  # ML / SBI
+  - pytorch
+  - scikit-learn
+
   # Plotting / inspection
   - matplotlib
 
@@ -24,3 +28,7 @@ dependencies:
 
   # Pip
   - pip
+
+  # Pip-only packages
+  - pip:
+      - sbi

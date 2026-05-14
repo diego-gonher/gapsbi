@@ -46,9 +46,22 @@ Implemented:
   - vector example plots
   - Spatial SIR snapshot plots
   - dataset plotting CLI
+- SBI experiment utilities:
+  - `FixedSplitNPE_C`
+  - `train_fixed_split_npe`
+  - `sample_posteriors_once`
+  - `compute_sbc_ranks_from_samples`
+  - `compute_tarp_from_samples`
+  - `set_all_seeds`
+- Preprocessing utilities:
+  - `scale_theta_train_val_test`
+  - `scale_x_train_val_test`
+  - `infer_x_transform`
 - CLIs:
   - `scripts/generate_dataset.py`
   - `scripts/plot_dataset_examples.py`
+- Experiment scripts:
+  - `experiments/npe_full_data/train.py`
 
 Not implemented yet:
 
@@ -56,7 +69,7 @@ Not implemented yet:
 - Weinberg simulator
 - registry helpers
 - baseline implementations
-- calibration diagnostics such as SBC/TARP
+- broader baseline/benchmark method coverage beyond NPE full-data
 
 ## Installation
 
@@ -433,6 +446,41 @@ The plotting CLI supports:
 
 `auto` chooses spatial plots for metadata task `spatial_sir`, vector plots for metadata task `glu` or `glm`, and time-series plots otherwise. Use `--log-y` for time-series plots such as Ricker if desired.
 
+## NPE Full-Data Experiment
+
+A reusable reference experiment is available at `experiments/npe_full_data/` to reproduce the full-data NPE workflow from `reference.txt` without notebook-only code.
+
+Run with:
+
+```bash
+PYTHONPATH=src python experiments/npe_full_data/train.py \
+  --config experiments/npe_full_data/config.yaml
+```
+
+Behavior:
+
+- loads a canonical GAPSBI HDF5 dataset and uses `x_full` only
+- scales `theta` using `MinMaxScaler(-1, 1)` fit on train
+- scales `x` using:
+  - `log1p + StandardScaler` for `ricker`
+  - `StandardScaler` otherwise
+- trains `FixedSplitNPE_C` on predefined train/val split
+- computes posterior samples, TARP, and SBC diagnostics per seed
+- writes seed outputs and aggregate results JSON
+
+Per-seed `summary.json` and root `all_results.json` include runtime/compute metadata for benchmarking:
+
+- `training_time_sec`
+- `posterior_sampling_time_sec`
+- `diagnostics_time_sec`
+- `total_runtime_sec`
+- `epochs_trained`
+- `best_validation_loss`
+- `num_train_examples`, `num_val_examples`, `num_test_examples`
+- `theta_dim`, `x_dim`
+- `device`, `density_estimator`
+- `num_parameters`
+
 ## Python API Example
 
 ```python
@@ -479,6 +527,9 @@ The test suite currently covers:
 - HDF5 contract validation and roundtrip behavior
 - dataset generation CLI behavior
 - plotting helper behavior
+- preprocessing/scaling helpers
+- evaluation helper utilities (posterior sampling, SBC, TARP)
+- NPE helper wiring (without slow NPE training)
 
 Run tests with:
 
@@ -490,12 +541,16 @@ PYTHONPATH=src pytest
 
 ```text
 configs/
+experiments/
 scripts/
 src/gapsbi/
-  baselines/
   diagnostics/
+  evaluation/
   masks/
+  methods/
+  preprocessing/
   simulators/
+  utils/
 tests/
 data/
 ```
