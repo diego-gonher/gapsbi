@@ -1,10 +1,7 @@
-dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps050_seed123.h5
-problem: oup
-output_dir: outputs/npe_mean_imputation/oup/mcar/oup_mcar_eps050
+dataset_path: data/canonical_v1/glm/mcar/glm_raw_mcar_eps010_seed123.h5
+problem: glm
+output_dir: outputs/npe_mask_augmentation/glm/mcar/glm_mcar_eps010
 seeds: [26485, 976532, 1172401, 512417, 8991732]
-
-imputation:
-  method: mean
 
 npe:
   density_estimator: nsf
