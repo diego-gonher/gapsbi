@@ -1,0 +1,19 @@
+dataset_path: data/canonical_v1/oup/mar/oup_mar_eps025_seed123.h5
+problem: our
+output_dir: outputs/npe_zero_imputation/oup/mar/oup_mar_eps025
+seeds: [26485, 976532, 1172401, 512417, 8991732]
+
+imputation:
+  method: zero
+
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+
+evaluation:
+  test_sample: 2000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
