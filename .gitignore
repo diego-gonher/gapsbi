@@ -7,6 +7,7 @@ data/
 outputs/
 .env
 src/gapsbi.egg-*
+logs/
 
 # temporary
 configs

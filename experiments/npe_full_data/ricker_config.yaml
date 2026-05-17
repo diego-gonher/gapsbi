@@ -1,6 +1,6 @@
 dataset_path: data/canonical_v1/ricker/mcar/ricker_mcar_eps010_seed123.h5
 problem: ricker
-output_dir: outputs/npe_full_data/ricker_no_missing_data
+output_dir: outputs/npe_full_data/ricker_full_data
 seeds: [26485, 512417, 976532, 1172401, 8991732]
 
 npe:

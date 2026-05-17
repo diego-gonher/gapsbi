@@ -1,6 +1,6 @@
 dataset_path: data/canonical_v1/glu/mcar/glu_mcar_eps010_seed123.h5
 problem: glu
-output_dir: outputs/npe_full_data/glu_no_missing_data
+output_dir: outputs/npe_full_data/glu_full_data
 seeds: [26485, 512417, 976532, 1172401, 8991732]
 
 npe:
