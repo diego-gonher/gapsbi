@@ -162,6 +162,11 @@ def main() -> None:
     seeds = [int(s) for s in config["seeds"]]
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
+    sampling_cfg = config.get("sampling", {})
+    reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
+    max_sampling_time = sampling_cfg.get("max_sampling_time", None)
+    if max_sampling_time is not None:
+        max_sampling_time = float(max_sampling_time)
     imputation_method = str(config["imputation"]["method"]).lower()
     method_name = resolve_method_name(imputation_method)
 
@@ -301,11 +306,19 @@ def main() -> None:
 
         # Time posterior sampling only.
         sampling_start = time.perf_counter()
-        posterior_samples_scaled = sample_posteriors_once(
+        (
+            posterior_samples_scaled,
+            num_sampling_failures,
+            num_sampling_fallbacks,
+            fallback_sampling_used,
+        ) = sample_posteriors_once(
             posterior=posterior,
             x_eval=x_eval,
             num_posterior_samples=num_posterior_samples,
             seed=seed + 10_000,
+            reject_outside_prior=reject_outside_prior,
+            max_sampling_time=max_sampling_time,
+            return_num_sampling_failures=True,
         )
         sampling_end = time.perf_counter()
         posterior_sampling_time_sec = sampling_end - sampling_start
@@ -412,6 +425,11 @@ def main() -> None:
             "x_scaler_fit_source": "x_full_train",
             "imputation_space": "scaled",
             "mask_convention": "1=observed,0=missing",
+            "reject_outside_prior": bool(reject_outside_prior),
+            "max_sampling_time": max_sampling_time,
+            "num_sampling_failures": int(num_sampling_failures),
+            "num_sampling_fallbacks": int(num_sampling_fallbacks),
+            "fallback_sampling_used": bool(fallback_sampling_used),
             "tarp_atc": float(atc),
             "tarp_ks_pvalue": float(ks_pval),
             "num_tarp_eval": int(test_sample),

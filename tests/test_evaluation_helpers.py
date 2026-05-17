@@ -19,6 +19,30 @@ class _DeterministicPosterior:
         return base + noise
 
 
+class _KwargPosterior:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def sample(self, shape, x, show_progress_bars=False, **kwargs):  # noqa: ANN001, ANN202
+        del show_progress_bars
+        self.calls.append(kwargs)
+        num = int(shape[0])
+        return x.repeat(num, 1)
+
+
+class _FallbackPosterior:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def sample(self, shape, x, show_progress_bars=False, **kwargs):  # noqa: ANN001, ANN202
+        del show_progress_bars
+        self.calls.append(kwargs)
+        if kwargs.get("reject_outside_prior", False):
+            raise RuntimeError("max_sampling_time exceeded")
+        num = int(shape[0])
+        return x.repeat(num, 1)
+
+
 def test_sample_posteriors_once_shape_and_seed_reproducible() -> None:
     posterior = _DeterministicPosterior(theta_dim=2)
     x_eval = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
@@ -38,6 +62,48 @@ def test_sample_posteriors_once_shape_and_seed_reproducible() -> None:
 
     assert samples_1.shape == (2, 5, 2)
     assert torch.allclose(samples_1, samples_2)
+
+
+def test_sample_posteriors_once_passes_optional_sampling_kwargs() -> None:
+    posterior = _KwargPosterior()
+    x_eval = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+
+    samples, failures, fallbacks, fallback_used = sample_posteriors_once(
+        posterior=posterior,
+        x_eval=x_eval,
+        num_posterior_samples=3,
+        seed=123,
+        reject_outside_prior=True,
+        max_sampling_time=30.0,
+        return_num_sampling_failures=True,
+    )
+
+    assert failures == 0
+    assert fallbacks == 0
+    assert fallback_used is False
+    assert samples.shape == (1, 3, 2)
+    assert posterior.calls[0]["reject_outside_prior"] is True
+    assert posterior.calls[0]["max_sampling_time"] == 30.0
+
+
+def test_sample_posteriors_once_runtime_error_uses_fallback() -> None:
+    posterior = _FallbackPosterior()
+    x_eval = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+
+    samples, failures, fallbacks, fallback_used = sample_posteriors_once(
+        posterior=posterior,
+        x_eval=x_eval,
+        num_posterior_samples=2,
+        seed=123,
+        reject_outside_prior=True,
+        max_sampling_time=0.01,
+        return_num_sampling_failures=True,
+    )
+
+    assert samples.shape == (1, 2, 2)
+    assert failures == 1
+    assert fallbacks == 1
+    assert fallback_used is True
 
 
 def test_compute_sbc_ranks_from_samples_shape_and_values() -> None:
