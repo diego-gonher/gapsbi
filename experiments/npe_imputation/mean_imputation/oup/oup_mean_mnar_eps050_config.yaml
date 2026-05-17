@@ -1,4 +1,4 @@
-dataset_path: data/canonical_v1/oup/mnar/oup_mnar_eps050_seed123.h5
+dataset_path: data/canonical_v1/oup/mnar/oup_mnar_self_censoring_identity_eps050_seed123.h5
 problem: oup
 output_dir: outputs/npe_mean_imputation/oup/mnar/oup_mnar_eps050
 seeds: [26485, 976532, 1172401, 512417, 8991732]
