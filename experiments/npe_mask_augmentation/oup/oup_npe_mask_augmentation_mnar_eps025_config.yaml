@@ -1,6 +1,6 @@
 dataset_path: data/canonical_v1/oup/mnar/oup_mnar_self_censoring_identity_eps025_seed123.h5
 problem: our
-output_dir: outputs/npe_mask_augmentation/oup/mnar/oup_mnar_eps010
+output_dir: outputs/npe_mask_augmentation/oup/mnar/oup_mnar_eps025
 seeds: [26485, 976532, 1172401, 512417, 8991732]
 
 npe:
