@@ -1,0 +1,19 @@
+dataset_path: data/canonical_v1/glm/mar/glm_raw_mar_coordinate_increasing_eps050_seed123.h5
+problem: glm
+output_dir: outputs/npe_mean_imputation/glm/mar/glm_raw_mar_eps050
+seeds: [26485, 976532, 1172401, 512417, 8991732]
+
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+
+evaluation:
+  test_sample: 2000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
+
+imputation:
+  method: mean
