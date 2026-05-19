@@ -1,9 +1,3 @@
-That sounds like a very strong structure honestly. The sequencing is good scientifically *and* operationally.
-
-You are basically organizing the benchmark so that each campaign answers a progressively harder question:
-
----
-
 # Campaign 1 — Simple, Cheap, Reproducible Baselines
 
 Problems:
