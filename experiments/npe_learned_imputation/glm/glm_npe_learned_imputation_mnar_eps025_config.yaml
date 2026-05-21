@@ -1,0 +1,31 @@
+dataset_path: data/canonical_v1/glm/mnar/glm_raw_mnar_self_censoring_identity_eps025_seed123.h5
+problem: glm
+output_dir: outputs/npe_learned_imputation/glm/mnar/glm_npe_learned_imputation_mnar_eps025
+seeds: [26485, 976532, 1172401, 512417, 8991732]
+
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+
+imputer:
+  lambda_recon: 1.0
+  learning_rate: 0.001
+  batch_size: 256
+  max_num_epochs: 5000
+  stop_after_epochs: 20
+  imputer_type: auto
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.0
+
+evaluation:
+  test_sample: 2000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
+
+sampling:
+  reject_outside_prior: false
+  max_sampling_time: null

@@ -5,12 +5,26 @@ from gapsbi.methods.imputation import (
     zero_impute,
 )
 from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_input
+from gapsbi.methods.learned_imputation import (
+    CNN1DImputer,
+    MLPImputer,
+    build_imputer,
+    complete_with_imputer,
+    prepare_learned_imputation_arrays,
+    train_learned_imputation_npe,
+)
 
 __all__ = [
     "FixedSplitNPE_C",
+    "CNN1DImputer",
+    "MLPImputer",
+    "build_imputer",
+    "complete_with_imputer",
     "compute_observed_feature_means",
+    "prepare_learned_imputation_arrays",
     "mean_impute",
     "make_zero_imputed_mask_augmented_input",
     "train_fixed_split_npe",
+    "train_learned_imputation_npe",
     "zero_impute",
 ]
