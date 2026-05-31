@@ -30,6 +30,7 @@ def main() -> None:
 
     theta = split_data["theta"]
     x_full = split_data["x_full"]
+    x_full_flat = x_full.reshape(x_full.shape[0], -1)
     mask = split_data["mask"].astype(bool)
     mask_flat = mask.reshape(mask.shape[0], -1)
 
@@ -44,6 +45,7 @@ def main() -> None:
     )
     save_theta_outputs(theta, output_dir / "prior")
     save_missingness_outputs(mask_flat, output_dir / "missingness")
+    save_observation_outputs(x_full_flat, output_dir / "observations")
 
     print(f"Dataset: {dataset_path}")
     print(f"Split: {args.split}")
@@ -143,6 +145,72 @@ def save_missingness_outputs(mask_flat: np.ndarray, output_dir: Path) -> None:
     plot_missing_fraction_by_example(missing_by_example, output_dir / "missing_fraction_by_example.png")
 
 
+def save_observation_outputs(x_full_flat: np.ndarray, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    feature_mean = x_full_flat.mean(axis=0)
+    feature_std = x_full_flat.std(axis=0)
+    feature_min = x_full_flat.min(axis=0)
+    feature_max = x_full_flat.max(axis=0)
+    quantiles = np.percentile(x_full_flat, [5, 25, 50, 75, 95], axis=0)
+    near_constant_count = int(np.sum(feature_std < 1e-8))
+
+    write_observation_summary_csv(
+        output_dir / "observation_summary.csv",
+        x_full_flat=x_full_flat,
+        feature_mean=feature_mean,
+        feature_std=feature_std,
+        feature_min=feature_min,
+        feature_max=feature_max,
+        near_constant_count=near_constant_count,
+    )
+    plot_x_feature_mean_std(feature_mean, feature_std, output_dir / "x_feature_mean_std.png")
+    plot_x_feature_quantiles(quantiles, output_dir / "x_feature_quantiles.png")
+    plot_x_global_distribution(x_full_flat.ravel(), output_dir / "x_global_distribution.png")
+
+
+def write_observation_summary_csv(
+    output_path: Path,
+    *,
+    x_full_flat: np.ndarray,
+    feature_mean: np.ndarray,
+    feature_std: np.ndarray,
+    feature_min: np.ndarray,
+    feature_max: np.ndarray,
+    near_constant_count: int,
+) -> None:
+    rows: list[dict[str, float | int | str]] = [
+        {
+            "scope": "global",
+            "feature": "",
+            "mean": float(x_full_flat.mean()),
+            "std": float(x_full_flat.std()),
+            "min": float(x_full_flat.min()),
+            "max": float(x_full_flat.max()),
+            "near_constant_features": near_constant_count,
+        }
+    ]
+
+    for index in range(x_full_flat.shape[1]):
+        rows.append(
+            {
+                "scope": "feature",
+                "feature": index,
+                "mean": float(feature_mean[index]),
+                "std": float(feature_std[index]),
+                "min": float(feature_min[index]),
+                "max": float(feature_max[index]),
+                "near_constant_features": "",
+            }
+        )
+
+    write_rows_csv(
+        output_path,
+        rows,
+        fieldnames=["scope", "feature", "mean", "std", "min", "max", "near_constant_features"],
+    )
+
+
 def per_feature_summary(values: np.ndarray, prefix: str) -> list[dict[str, float | str]]:
     rows = []
     for index in range(values.shape[1]):
@@ -230,6 +298,55 @@ def plot_missing_fraction_by_example(missing_by_example: np.ndarray, output_path
     ax.set_ylabel("number of examples")
     ax.set_xlim(-0.02, 1.02)
     ax.set_title("Missing fraction by example")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_x_feature_mean_std(feature_mean: np.ndarray, feature_std: np.ndarray, output_path: Path) -> None:
+    feature = np.arange(feature_mean.size)
+    fig, ax = plt.subplots(figsize=(10.0, 4.0))
+    ax.plot(feature, feature_mean, color="C0", linewidth=1.5, label="mean")
+    ax.fill_between(
+        feature,
+        feature_mean - feature_std,
+        feature_mean + feature_std,
+        color="C0",
+        alpha=0.2,
+        label="mean +/- std",
+    )
+    ax.set_xlabel("feature")
+    ax.set_ylabel("x_full")
+    ax.set_title("x_full feature mean +/- std")
+    ax.legend(fontsize="small")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_x_feature_quantiles(quantiles: np.ndarray, output_path: Path) -> None:
+    feature = np.arange(quantiles.shape[1])
+    q05, q25, q50, q75, q95 = quantiles
+
+    fig, ax = plt.subplots(figsize=(10.0, 4.0))
+    ax.fill_between(feature, q05, q95, color="C0", alpha=0.15, label="5%-95%")
+    ax.fill_between(feature, q25, q75, color="C0", alpha=0.3, label="25%-75%")
+    ax.plot(feature, q50, color="C0", linewidth=1.5, label="median")
+    ax.set_xlabel("feature")
+    ax.set_ylabel("x_full")
+    ax.set_title("x_full feature quantile bands")
+    ax.legend(fontsize="small")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_x_global_distribution(values: np.ndarray, output_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=(8.0, 4.0))
+    ax.hist(values, bins=80, color="C2", alpha=0.85)
+    ax.set_xlabel("x_full value")
+    ax.set_ylabel("count")
+    ax.set_title("Global x_full distribution")
     fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
