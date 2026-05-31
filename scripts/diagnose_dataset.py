@@ -46,6 +46,7 @@ def main() -> None:
     save_theta_outputs(theta, output_dir / "prior")
     save_missingness_outputs(mask_flat, x_full_flat, output_dir / "missingness")
     save_observation_outputs(x_full_flat, output_dir / "observations")
+    save_theta_x_outputs(theta, x_full_flat, output_dir / "theta_x")
 
     print(f"Dataset: {dataset_path}")
     print(f"Split: {args.split}")
@@ -168,6 +169,72 @@ def save_observation_outputs(x_full_flat: np.ndarray, output_dir: Path) -> None:
     plot_x_feature_mean_std(feature_mean, feature_std, output_dir / "x_feature_mean_std.png")
     plot_x_feature_quantiles(quantiles, output_dir / "x_feature_quantiles.png")
     plot_x_global_distribution(x_full_flat.ravel(), output_dir / "x_global_distribution.png")
+
+
+def save_theta_x_outputs(theta: np.ndarray, x_full_flat: np.ndarray, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    correlations, constant_feature_count = compute_theta_x_correlations(theta, x_full_flat)
+
+    if constant_feature_count:
+        print(f"Warning: set correlations to zero for {constant_feature_count} near-constant x_full features.")
+
+    write_theta_x_summary_csv(output_dir / "theta_x_summary.csv", correlations)
+    plot_theta_x_correlation_heatmap(correlations, output_dir / "theta_x_correlation_heatmap.png")
+
+
+def compute_theta_x_correlations(
+    theta: np.ndarray,
+    x_full_flat: np.ndarray,
+    constant_threshold: float = 1e-8,
+) -> tuple[np.ndarray, int]:
+    theta_centered = theta - theta.mean(axis=0, keepdims=True)
+    x_centered = x_full_flat - x_full_flat.mean(axis=0, keepdims=True)
+
+    theta_scale = np.sqrt(np.sum(theta_centered**2, axis=0))
+    x_scale = np.sqrt(np.sum(x_centered**2, axis=0))
+    valid_theta = theta_scale >= constant_threshold
+    valid_x = x_scale >= constant_threshold
+
+    correlations = np.zeros((theta.shape[1], x_full_flat.shape[1]), dtype=float)
+    if np.any(valid_theta) and np.any(valid_x):
+        numerator = theta_centered[:, valid_theta].T @ x_centered[:, valid_x]
+        denominator = theta_scale[valid_theta][:, None] * x_scale[valid_x][None, :]
+        correlations[np.ix_(valid_theta, valid_x)] = numerator / denominator
+
+    return correlations, int(np.sum(~valid_x))
+
+
+def write_theta_x_summary_csv(output_path: Path, correlations: np.ndarray, top_k: int = 5) -> None:
+    rows: list[dict[str, float | int | str]] = []
+    abs_correlations = np.abs(correlations)
+
+    for theta_index in range(correlations.shape[0]):
+        abs_row = abs_correlations[theta_index]
+        top_count = min(top_k, correlations.shape[1])
+        top_indices = np.argsort(abs_row)[::-1][:top_count]
+        rows.append(
+            {
+                "theta_dim": theta_index,
+                "max_abs_correlation": float(abs_row[top_indices[0]]) if top_count else 0.0,
+                "max_abs_correlation_feature": int(top_indices[0]) if top_count else "",
+                "mean_abs_correlation": float(abs_row.mean()) if abs_row.size else 0.0,
+                "top_feature_indices": ";".join(str(int(index)) for index in top_indices),
+                "top_correlations": ";".join(f"{float(correlations[theta_index, index]):.6g}" for index in top_indices),
+            }
+        )
+
+    write_rows_csv(
+        output_path,
+        rows,
+        fieldnames=[
+            "theta_dim",
+            "max_abs_correlation",
+            "max_abs_correlation_feature",
+            "mean_abs_correlation",
+            "top_feature_indices",
+            "top_correlations",
+        ],
+    )
 
 
 def write_observation_summary_csv(
@@ -392,6 +459,24 @@ def plot_x_global_distribution(values: np.ndarray, output_path: Path) -> None:
     ax.set_xlabel("x_full value")
     ax.set_ylabel("count")
     ax.set_title("Global x_full distribution")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_theta_x_correlation_heatmap(correlations: np.ndarray, output_path: Path) -> None:
+    n_theta, n_features = correlations.shape
+    fig_width = max(8.0, min(18.0, 0.25 * n_features))
+    fig_height = max(3.0, min(10.0, 0.6 * n_theta + 1.5))
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    image = ax.imshow(correlations, aspect="auto", vmin=-1.0, vmax=1.0, cmap="coolwarm")
+    ax.set_xlabel("feature")
+    ax.set_ylabel("theta dimension")
+    ax.set_title("Pearson correlation: theta vs x_full features")
+    ax.set_yticks(np.arange(n_theta))
+    ax.set_yticklabels([str(index) for index in range(n_theta)])
+    fig.colorbar(image, ax=ax, label="correlation")
     fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
