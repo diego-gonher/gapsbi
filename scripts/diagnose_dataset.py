@@ -44,7 +44,7 @@ def main() -> None:
         metadata_attrs=metadata_attrs,
     )
     save_theta_outputs(theta, output_dir / "prior")
-    save_missingness_outputs(mask_flat, output_dir / "missingness")
+    save_missingness_outputs(mask_flat, x_full_flat, output_dir / "missingness")
     save_observation_outputs(x_full_flat, output_dir / "observations")
 
     print(f"Dataset: {dataset_path}")
@@ -130,7 +130,7 @@ def save_theta_outputs(theta: np.ndarray, output_dir: Path) -> None:
     plot_theta_marginals(theta, output_dir / "theta_marginals.png")
 
 
-def save_missingness_outputs(mask_flat: np.ndarray, output_dir: Path) -> None:
+def save_missingness_outputs(mask_flat: np.ndarray, x_full_flat: np.ndarray, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     missing_by_feature = 1.0 - mask_flat.mean(axis=0)
     missing_by_example = 1.0 - mask_flat.mean(axis=1)
@@ -143,6 +143,7 @@ def save_missingness_outputs(mask_flat: np.ndarray, output_dir: Path) -> None:
     write_rows_csv(output_dir / "missingness_summary.csv", rows)
     plot_missing_fraction_by_feature(missing_by_feature, output_dir / "missing_fraction_by_feature.png")
     plot_missing_fraction_by_example(missing_by_example, output_dir / "missing_fraction_by_example.png")
+    plot_missingness_vs_x_value(x_full_flat.ravel(), mask_flat.ravel(), output_dir / "missingness_vs_x_value.png")
 
 
 def save_observation_outputs(x_full_flat: np.ndarray, output_dir: Path) -> None:
@@ -298,6 +299,50 @@ def plot_missing_fraction_by_example(missing_by_example: np.ndarray, output_path
     ax.set_ylabel("number of examples")
     ax.set_xlim(-0.02, 1.02)
     ax.set_title("Missing fraction by example")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_missingness_vs_x_value(
+    x_values: np.ndarray,
+    mask_values: np.ndarray,
+    output_path: Path,
+    n_bins: int = 30,
+) -> None:
+    x_values = np.asarray(x_values, dtype=float)
+    missing = 1.0 - np.asarray(mask_values, dtype=float)
+    unique_values = np.unique(x_values)
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.0))
+    if unique_values.size < 2:
+        ax.text(
+            0.5,
+            0.5,
+            "Skipped: fewer than 2 unique x_full values",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        print("Warning: skipping missingness-vs-x binning because x_full has fewer than 2 unique values.")
+    else:
+        bins = np.linspace(float(x_values.min()), float(x_values.max()), min(n_bins, unique_values.size) + 1)
+        bin_index = np.digitize(x_values, bins[1:-1], right=False)
+        bin_count = np.bincount(bin_index, minlength=bins.size - 1)
+        missing_count = np.bincount(bin_index, weights=missing, minlength=bins.size - 1)
+        valid = bin_count > 0
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        missing_fraction = np.full(bins.size - 1, np.nan)
+        missing_fraction[valid] = missing_count[valid] / bin_count[valid]
+
+        ax.plot(bin_centers[valid], missing_fraction[valid], marker="o", linewidth=1.5)
+        ax.axhline(float(missing.mean()), color="0.4", linestyle="--", linewidth=1.0, label="overall")
+        ax.legend(fontsize="small")
+
+    ax.set_xlabel("binned x_full value")
+    ax.set_ylabel("empirical missing fraction")
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_title("Missingness vs x_full value")
     fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
