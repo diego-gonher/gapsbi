@@ -3,22 +3,22 @@ set -u
 set -o pipefail
 
 METHOD="npe_imputation"
-QUEUE_NAME="zero_imputation_glu"
+QUEUE_NAME="mean_imputation_ricker"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$REPO_ROOT"
 
 CONFIGS=(
-  "zero_imputation/glu/glu_zero_mcar_eps010_config.yaml"
-  "zero_imputation/glu/glu_zero_mcar_eps025_config.yaml"
-  "zero_imputation/glu/glu_zero_mcar_eps050_config.yaml"
-  "zero_imputation/glu/glu_zero_mar_eps010_config.yaml"
-  "zero_imputation/glu/glu_zero_mar_eps025_config.yaml"
-  "zero_imputation/glu/glu_zero_mar_eps050_config.yaml"
-  "zero_imputation/glu/glu_zero_mnar_eps010_config.yaml"
-  "zero_imputation/glu/glu_zero_mnar_eps025_config.yaml"
-  "zero_imputation/glu/glu_zero_mnar_eps050_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mcar_eps010_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mcar_eps025_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mcar_eps050_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mar_eps010_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mar_eps025_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mar_eps050_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mnar_eps010_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mnar_eps025_config.yaml"
+  "mean_imputation/full_sim_budget/ricker/ricker_mean_mnar_eps050_config.yaml"
 )
 
 mkdir -p "logs/${METHOD}/${QUEUE_NAME}"

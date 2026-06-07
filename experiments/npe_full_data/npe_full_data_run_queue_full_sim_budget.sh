@@ -5,10 +5,10 @@ set -o pipefail
 METHOD="npe_full_data"
 
 CONFIGS=(
-  "oup_config.yaml"
-  "glm_config.yaml"
-  "glu_config.yaml"
-  "ricker_config.yaml"
+  "full_sim_budget/oup_config.yaml"
+  "full_sim_budget/glm_config.yaml"
+  "full_sim_budget/glu_config.yaml"
+  "full_sim_budget/ricker_config.yaml"
 )
 
 mkdir -p ../../logs/${METHOD}

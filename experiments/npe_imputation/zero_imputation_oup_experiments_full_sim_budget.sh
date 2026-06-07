@@ -2,23 +2,23 @@
 set -u
 set -o pipefail
 
-METHOD="npe_learned_imputation"
-QUEUE_NAME="npe_learned_imputation_glu"
+METHOD="npe_imputation"
+QUEUE_NAME="zero_imputation_oup"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$REPO_ROOT"
 
 CONFIGS=(
-  "glu/glu_npe_learned_imputation_mcar_eps010_config.yaml"
-  "glu/glu_npe_learned_imputation_mcar_eps025_config.yaml"
-  "glu/glu_npe_learned_imputation_mcar_eps050_config.yaml"
-  "glu/glu_npe_learned_imputation_mar_eps010_config.yaml"
-  "glu/glu_npe_learned_imputation_mar_eps025_config.yaml"
-  "glu/glu_npe_learned_imputation_mar_eps050_config.yaml"
-  "glu/glu_npe_learned_imputation_mnar_eps010_config.yaml"
-  "glu/glu_npe_learned_imputation_mnar_eps025_config.yaml"
-  "glu/glu_npe_learned_imputation_mnar_eps050_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mcar_eps010_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mcar_eps025_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mcar_eps050_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mar_eps010_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mar_eps025_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mar_eps050_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mnar_eps010_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mnar_eps025_config.yaml"
+  "zero_imputation/full_sim_budget/oup/oup_zero_mnar_eps050_config.yaml"
 )
 
 mkdir -p "logs/${METHOD}/${QUEUE_NAME}"

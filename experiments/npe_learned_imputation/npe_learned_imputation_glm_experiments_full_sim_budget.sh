@@ -2,23 +2,23 @@
 set -u
 set -o pipefail
 
-METHOD="npe_imputation"
-QUEUE_NAME="mean_imputation_glm"
+METHOD="npe_learned_imputation"
+QUEUE_NAME="npe_learned_imputation_glm"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$REPO_ROOT"
 
 CONFIGS=(
-  "mean_imputation/glm/glm_mean_mcar_eps010_config.yaml"
-  "mean_imputation/glm/glm_mean_mcar_eps025_config.yaml"
-  "mean_imputation/glm/glm_mean_mcar_eps050_config.yaml"
-  "mean_imputation/glm/glm_mean_mar_eps010_config.yaml"
-  "mean_imputation/glm/glm_mean_mar_eps025_config.yaml"
-  "mean_imputation/glm/glm_mean_mar_eps050_config.yaml"
-  "mean_imputation/glm/glm_mean_mnar_eps010_config.yaml"
-  "mean_imputation/glm/glm_mean_mnar_eps025_config.yaml"
-  "mean_imputation/glm/glm_mean_mnar_eps050_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mcar_eps010_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mcar_eps025_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mcar_eps050_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mar_eps010_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mar_eps025_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mar_eps050_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mnar_eps010_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mnar_eps025_config.yaml"
+  "full_sim_budget/glm/glm_npe_learned_imputation_mnar_eps050_config.yaml"
 )
 
 mkdir -p "logs/${METHOD}/${QUEUE_NAME}"

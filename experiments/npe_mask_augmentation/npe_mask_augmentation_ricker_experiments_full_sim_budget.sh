@@ -2,23 +2,23 @@
 set -u
 set -o pipefail
 
-METHOD="npe_imputation"
-QUEUE_NAME="mean_imputation_oup"
+METHOD="npe_mask_augmentation"
+QUEUE_NAME="npe_mask_augmentation_ricker"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$REPO_ROOT"
 
 CONFIGS=(
-  "mean_imputation/oup/oup_mean_mcar_eps010_config.yaml"
-  "mean_imputation/oup/oup_mean_mcar_eps025_config.yaml"
-  "mean_imputation/oup/oup_mean_mcar_eps050_config.yaml"
-  "mean_imputation/oup/oup_mean_mar_eps010_config.yaml"
-  "mean_imputation/oup/oup_mean_mar_eps025_config.yaml"
-  "mean_imputation/oup/oup_mean_mar_eps050_config.yaml"
-  "mean_imputation/oup/oup_mean_mnar_eps010_config.yaml"
-  "mean_imputation/oup/oup_mean_mnar_eps025_config.yaml"
-  "mean_imputation/oup/oup_mean_mnar_eps050_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mcar_eps010_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mcar_eps025_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mcar_eps050_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mar_eps010_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mar_eps025_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mar_eps050_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mnar_eps010_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mnar_eps025_config.yaml"
+  "full_sim_budget/ricker/ricker_npe_mask_augmentation_mnar_eps050_config.yaml"
 )
 
 mkdir -p "logs/${METHOD}/${QUEUE_NAME}"
