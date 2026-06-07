@@ -535,6 +535,10 @@ PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
 
 - **MMD**: maximum mean discrepancy between posterior sample distributions. The implemented scripts use an RBF kernel with the median heuristic. Larger MMD indicates larger distributional shift.
 - **C2ST**: classifier two-sample test accuracy. A logistic classifier is trained to distinguish posterior samples from two methods or seeds. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger shift.
+- **Euclidean posterior mean shift**: Euclidean distance between posterior means. This is a simple location-shift diagnostic.
+- **Mahalanobis posterior mean shift**: posterior mean displacement measured in units of the matched full-data posterior covariance. Values near `0` indicate little location shift; values around `1` indicate roughly one posterior standard deviation of displacement.
+- **Covariance trace ratio**: ratio of missing-data posterior covariance trace to full-data posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average.
+- **Log-determinant covariance ratio**: difference in log covariance determinants, `logdet(Sigma_missing) - logdet(Sigma_full)`. Positive values indicate posterior uncertainty-volume expansion; negative values indicate contraction.
 
 Posterior shift is computed from existing `posterior_samples.h5` files and does not retrain models.
 
@@ -591,6 +595,24 @@ PYTHONPATH=src python scripts/compute_campaign1_per_observation_shift_metrics.py
   --summary-out outputs/analysis/campaign1_per_observation_shift_metrics_summary.csv
 ```
 
+Compute per-observation posterior moment shifts to separate posterior location changes from uncertainty-volume changes:
+
+```bash
+PYTHONPATH=src python scripts/compute_campaign1_per_observation_moment_shift_metrics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/campaign1_per_observation_moment_shift_metrics.csv \
+  --summary-out outputs/analysis/campaign1_per_observation_moment_shift_metrics_summary.csv
+```
+
+Compute the corresponding full-data per-observation seed variability baseline for posterior moment shifts:
+
+```bash
+PYTHONPATH=src python scripts/compute_full_data_per_observation_seed_moment_shift_metrics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/full_data_per_observation_seed_moment_shift_metrics.csv \
+  --summary-out outputs/analysis/full_data_per_observation_seed_moment_shift_metrics_summary.csv
+```
+
 ## Python API Example
 
 ```python
@@ -639,7 +661,7 @@ The test suite covers:
 - posterior sampling, SBC, and TARP helpers
 - NPE helper wiring without slow training
 - Campaign 1 aggregation and stability analysis
-- posterior shift metric helpers and analysis scripts
+- posterior shift and moment-shift metric helpers and analysis scripts
 
 Run tests with:
 
@@ -670,6 +692,8 @@ scripts/
   compute_campaign1_shift_metrics.py
   compute_full_data_seed_shift_metrics.py
   compute_campaign1_per_observation_shift_metrics.py
+  compute_campaign1_per_observation_moment_shift_metrics.py
+  compute_full_data_per_observation_seed_moment_shift_metrics.py
 src/gapsbi/
   diagnostics/                   # Dataset plotting helpers
   evaluation/                    # Posterior sampling, SBC, TARP
