@@ -26,6 +26,11 @@ Methods:
 3. Mean-imputation NPE
 4. Mean-imputation + mask augmentation
 
+Simulation budgets:
+
+* `full_sim_budget`: 45k train / 5k validation / 1k test, with outputs under `outputs/` unless a config explicitly uses another full-budget root.
+* `low_sim_budget`: 4.5k train / 500 validation / full 1k test, with outputs under `outputs_low_sim_budget/`.
+
 This is excellent because:
 
 * everything is easy to reproduce,

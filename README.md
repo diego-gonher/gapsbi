@@ -93,7 +93,12 @@ Methods:
 - Mean-imputation NPE
 - Mean-imputation + mask augmentation
 
-Each configuration uses multiple random seeds. The standard Campaign 1 analysis expects 5 seeds per configuration and 560 seed-level rows after aggregation.
+Each configuration uses 10 fixed random seeds. Campaign 1 is organized into simulation-budget-specific config trees:
+
+- `full_sim_budget`: the canonical 45k train / 5k validation / 1k test setup.
+- `low_sim_budget`: a 4.5k train / 500 validation ablation using the same HDF5 datasets and full test split.
+
+Full-budget runs write under `outputs/` unless a config explicitly uses another full-budget root. Low-budget runs write under `outputs_low_sim_budget/` so ablations do not mix with full-budget results.
 
 ## Implemented Simulators
 
@@ -487,7 +492,14 @@ Uses `x_full` only and serves as the reference no-missingness baseline.
 
 ```bash
 PYTHONPATH=src python experiments/npe_full_data/train.py \
-  --config experiments/npe_full_data/oup_config.yaml
+  --config experiments/npe_full_data/full_sim_budget/oup_config.yaml
+```
+
+Low simulation budget:
+
+```bash
+PYTHONPATH=src python experiments/npe_full_data/train.py \
+  --config experiments/npe_full_data/low_sim_budget/oup_config.yaml
 ```
 
 ### Zero/Mean Imputation NPE
@@ -499,7 +511,14 @@ Uses `x_obs` after scaling, then imputes missing entries in scaled x-space.
 
 ```bash
 PYTHONPATH=src python experiments/npe_imputation/train.py \
-  --config experiments/npe_imputation/zero_imputation/oup/oup_zero_mcar_eps025_config.yaml
+  --config experiments/npe_imputation/zero_imputation/full_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
+```
+
+Low simulation budget:
+
+```bash
+PYTHONPATH=src python experiments/npe_imputation/train.py \
+  --config experiments/npe_imputation/zero_imputation/low_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
 ```
 
 ### Mean-imputation + Mask Augmentation
@@ -512,7 +531,14 @@ x_aug = [x_imputed, mask]
 
 ```bash
 PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
-  --config experiments/npe_mask_augmentation/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
+  --config experiments/npe_mask_augmentation/full_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
+```
+
+Low simulation budget:
+
+```bash
+PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
+  --config experiments/npe_mask_augmentation/low_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
 ```
 
 ### Learned-imputation NPE
@@ -521,7 +547,14 @@ Trains an imputer network jointly with NPE. The imputer predicts missing x entri
 
 ```bash
 PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
-  --config experiments/npe_learned_imputation/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
+  --config experiments/npe_learned_imputation/full_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
+```
+
+Low simulation budget:
+
+```bash
+PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
+  --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
 ```
 
 ## Evaluation Metrics
@@ -550,6 +583,21 @@ Aggregate seed-level experiment outputs:
 PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
   --outputs-dir outputs \
   --out outputs/campaign1_master_results.csv
+```
+
+Aggregate low simulation budget outputs:
+
+```bash
+PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
+  --outputs-dir outputs_low_sim_budget \
+  --out outputs_low_sim_budget/campaign1_master_results.csv
+```
+
+Launch full-budget and low-budget queue scripts with the matching budget-specific queues, for example:
+
+```bash
+bash experiments/npe_imputation/zero_imputation_oup_experiments_full_sim_budget.sh
+bash experiments/npe_imputation/zero_imputation_oup_experiments_low_sim_budget.sh
 ```
 
 Analyze stability and runtime across seeds/configurations:
@@ -680,6 +728,7 @@ experiments/
   npe_mask_augmentation/         # Imputation + mask baseline
   npe_learned_imputation/        # Learned-imputation baseline
 outputs/                         # Campaign outputs and analysis products
+outputs_low_sim_budget/          # Low simulation-budget campaign outputs
 outputs_local/                   # Local exploratory outputs
 scripts/
   generate_dataset.py
