@@ -1,7 +1,7 @@
 dataset_path: data/canonical_v1/oup/mar/oup_mar_coordinate_increasing_eps010_seed123.h5
 problem: oup
 output_dir: outputs/npe_zero_imputation/oup/mar/oup_mar_eps010
-seeds: [26485, 976532, 1172401, 512417, 8991732]
+seeds: [26485, 976532, 1172401, 512417, 8991732, 314159, 271828, 161803, 141421, 173205]
 
 imputation:
   method: zero

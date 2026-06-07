@@ -109,6 +109,45 @@ def generate_dataset(
     }
 
 
+def apply_train_val_sample_limits(
+    dataset: dict[str, dict[str, np.ndarray]],
+    max_train_samples: int | None = None,
+    max_val_samples: int | None = None,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Optionally slice train/validation splits while preserving the full test split."""
+    if max_train_samples is None and max_val_samples is None:
+        return dataset
+
+    max_train_samples = _validate_sample_limit(max_train_samples, "max_train_samples")
+    max_val_samples = _validate_sample_limit(max_val_samples, "max_val_samples")
+
+    limited = {
+        split: dict(split_data)
+        for split, split_data in dataset.items()
+    }
+    if max_train_samples is not None:
+        limited["train"] = _slice_split(limited["train"], max_train_samples)
+    if max_val_samples is not None:
+        limited["val"] = _slice_split(limited["val"], max_val_samples)
+    return limited
+
+
+def _validate_sample_limit(value: int | None, name: str) -> int | None:
+    if value is None:
+        return None
+    value = int(value)
+    if value < 1:
+        raise ValueError(f"{name} must be positive when set, got {value}.")
+    return value
+
+
+def _slice_split(split_data: dict[str, np.ndarray], max_samples: int) -> dict[str, np.ndarray]:
+    return {
+        name: array[:max_samples]
+        for name, array in split_data.items()
+    }
+
+
 def _generate_mask(
     simulator: SimulatorLike,
     mask_generator: MaskGeneratorLike,

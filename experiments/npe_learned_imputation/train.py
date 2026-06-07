@@ -16,6 +16,7 @@ from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
 from sbi.utils import BoxUniform
 
+from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
 from gapsbi.evaluation.tarp import compute_tarp_from_samples
@@ -149,6 +150,8 @@ def main() -> None:
     dataset_path = Path(config["dataset_path"])
     output_dir = Path(config["output_dir"])
     seeds = [int(s) for s in config["seeds"]]
+    max_train_samples = config.get("max_train_samples")
+    max_val_samples = config.get("max_val_samples")
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
     imputer_cfg = config["imputer"]
@@ -163,6 +166,11 @@ def main() -> None:
     problem = infer_problem_name(config.get("problem"), dataset_path)
     mechanism, epsilon = parse_missingness_and_epsilon(dataset_path)
     dataset, _metadata = load_gapsbi_hdf5(dataset_path)
+    dataset = apply_train_val_sample_limits(
+        dataset,
+        max_train_samples=max_train_samples,
+        max_val_samples=max_val_samples,
+    )
     prepared = prepare_learned_imputation_arrays(dataset=dataset, problem=problem)
 
     theta_train = prepared["theta_train"]
@@ -341,6 +349,8 @@ def main() -> None:
                 "num_train_examples": int(theta_train.shape[0]),
                 "num_val_examples": int(theta_val.shape[0]),
                 "num_test_examples": int(theta_test.shape[0]),
+                "max_train_samples": max_train_samples,
+                "max_val_samples": max_val_samples,
                 "lambda_recon": float(imputer_cfg.get("lambda_recon", 1.0)),
                 "imputer_type": _resolve_imputer_type(problem, imputer_cfg),
                 "density_estimator": str(npe_cfg.get("density_estimator", "nsf")),
@@ -384,6 +394,8 @@ def main() -> None:
                 "epsilon": epsilon,
                 "method": "npe_learned_imputation",
                 "dataset_path": str(dataset_path),
+                "max_train_samples": max_train_samples,
+                "max_val_samples": max_val_samples,
                 "lambda_recon": float(imputer_cfg.get("lambda_recon", 1.0)),
                 "imputer_type": _resolve_imputer_type(problem, imputer_cfg),
                 "density_estimator": str(npe_cfg.get("density_estimator", "nsf")),

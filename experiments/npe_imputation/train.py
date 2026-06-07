@@ -17,6 +17,7 @@ from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
 from sbi.utils import BoxUniform
 
+from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
 from gapsbi.evaluation.tarp import compute_tarp_from_samples
@@ -160,6 +161,8 @@ def main() -> None:
     dataset_path = Path(config["dataset_path"])
     output_dir = Path(config["output_dir"])
     seeds = [int(s) for s in config["seeds"]]
+    max_train_samples = config.get("max_train_samples")
+    max_val_samples = config.get("max_val_samples")
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
     sampling_cfg = config.get("sampling", {})
@@ -174,6 +177,11 @@ def main() -> None:
 
     problem = infer_problem_name(config.get("problem"), dataset_path)
     dataset, _metadata = load_gapsbi_hdf5(dataset_path)
+    dataset = apply_train_val_sample_limits(
+        dataset,
+        max_train_samples=max_train_samples,
+        max_val_samples=max_val_samples,
+    )
 
     theta_train_np = dataset["train"]["theta"]
     theta_val_np = dataset["val"]["theta"]
@@ -414,6 +422,8 @@ def main() -> None:
             "num_train_examples": int(num_train_examples),
             "num_val_examples": int(num_val_examples),
             "num_test_examples": int(num_test_examples),
+            "max_train_samples": max_train_samples,
+            "max_val_samples": max_val_samples,
             "theta_dim": int(theta_dim),
             "x_dim": int(x_dim),
             "device": str(npe_cfg.get("device", "cpu")),
