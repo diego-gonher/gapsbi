@@ -93,3 +93,23 @@ def test_build_results_table_fills_missing_metrics_with_nan(tmp_path: Path) -> N
     assert row["status"] == "ok"
     assert row["training_time_sec"] == 1.0
     assert row["tarp_mae"] != row["tarp_mae"]
+
+
+def test_build_results_table_uses_path_problem_over_summary_typo(tmp_path: Path) -> None:
+    aggregator = _load_aggregator_module()
+    outputs_dir = tmp_path / "outputs"
+    summary_path = (
+        outputs_dir
+        / "npe_zero_imputation"
+        / "oup"
+        / "mar"
+        / "oup_mar_eps025"
+        / "seed_976532"
+        / "summary.json"
+    )
+    _write_summary(summary_path, {"seed": 976532, "problem": "our"})
+
+    rows = aggregator.build_results_table(outputs_dir)
+
+    assert len(rows) == 1
+    assert rows[0]["problem"] == "oup"

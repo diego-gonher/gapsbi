@@ -290,10 +290,9 @@ def build_row(summary_path: Path, outputs_dir: Path) -> dict[str, Any]:
         "total_runtime_sec": _as_float(summary.get("total_runtime_sec")),
     }
 
-    # Prefer explicit JSON values if present, but keep path parsing as the source
-    # of truth for full-data runs and legacy summaries without these fields.
+    # Keep path parsing as the source of truth for Campaign 1 metadata; some
+    # legacy summaries contain stale config typos.
     row["seed"] = int(summary.get("seed", row["seed"]))
-    row["problem"] = str(summary.get("problem", row["problem"]))
     return {column: row.get(column, _nan()) for column in REQUIRED_COLUMNS}
 
 
