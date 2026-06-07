@@ -1,75 +1,14 @@
 # GAPSBI: Gaps in Data for Simulation-Based Inference
 
-GAPSBI is a small benchmark-generation toolkit for simulation-based inference with missing data. The current repository focuses on producing reproducible synthetic datasets with explicit masks, saving them in a common HDF5 format, and providing quick inspection plots.
+GAPSBI is a benchmark and experimentation framework for simulation-based inference under missing data. It provides synthetic benchmark problems, MCAR/MAR/MNAR missingness mechanisms, reproducible HDF5 datasets, baseline NPE methods, calibration diagnostics, experiment aggregation, and posterior shift diagnostics.
 
-The core design is:
+The core dataset contract is simple:
 
 - Generate complete simulator outputs `x_full`.
 - Generate a binary mask where `1 = observed` and `0 = missing`.
 - Store observed data as `x_obs = x_full * mask`.
-- Keep randomness explicit with `numpy.random.Generator` objects.
-
-## Current Status
-
-Implemented:
-
-- Simulator interface: `gapsbi.simulators.base.Simulator`
-- Simulators:
-  - `RickerSimulator`
-  - `OUPSimulator`
-  - `GLUSimulator`
-  - `GLMSimulator`
-  - `SpatialSIRSimulator`
-  - `HodgkinHuxleySimulator`
-- Priors:
-  - `UniformPrior`
-  - `LogUniformPrior`
-- RNG utilities:
-  - `make_rng`
-  - `split_rng`
-  - `make_rngs`
-- Mask generators:
-  - `PointMCARMask`
-  - `BlockMCARMask`
-  - `CoordinateMARMask`
-  - `SelfCensoringMNARMask`
-  - `ValueDependentMNARMask` alias
-- Dataset generation:
-  - `generate_split`
-  - `generate_dataset`
-- HDF5 I/O:
-  - `save_gapsbi_hdf5`
-  - `load_gapsbi_hdf5`
-  - `validate_gapsbi_dataset`
-- Diagnostics and plotting:
-  - time-series example plots
-  - vector example plots
-  - Spatial SIR snapshot plots
-  - dataset plotting CLI
-- SBI experiment utilities:
-  - `FixedSplitNPE_C`
-  - `train_fixed_split_npe`
-  - `sample_posteriors_once`
-  - `compute_sbc_ranks_from_samples`
-  - `compute_tarp_from_samples`
-  - `set_all_seeds`
-- Preprocessing utilities:
-  - `scale_theta_train_val_test`
-  - `scale_x_train_val_test`
-  - `infer_x_transform`
-- CLIs:
-  - `scripts/generate_dataset.py`
-  - `scripts/plot_dataset_examples.py`
-- Experiment scripts:
-  - `experiments/npe_full_data/train.py`
-
-Not implemented yet:
-
-- observed-history MAR masks
-- Weinberg simulator
-- registry helpers
-- baseline implementations
-- broader baseline/benchmark method coverage beyond NPE full-data
+- Save train/validation/test splits in a shared HDF5 format.
+- Keep randomness explicit with reproducible seeds.
 
 ## Installation
 
@@ -86,7 +25,75 @@ Install the package in editable mode:
 pip install -e .
 ```
 
-The package currently requires Python `>=3.11`.
+The package requires Python `>=3.11`. Core dependencies include `numpy`, `h5py`, `matplotlib`, `scikit-learn`, `scipy`, `torch`, `sbi`, and `tqdm`.
+
+## Current Benchmark Status
+
+Implemented benchmark tasks:
+
+- OUP
+- GLM
+- GLU
+- Ricker
+- Spatial SIR
+- Hodgkin-Huxley
+
+Implemented missingness mechanisms:
+
+- MCAR: pointwise and block masking
+- MAR: coordinate/time-dependent masking
+- MNAR: self-censoring value-dependent masking
+
+Implemented methods:
+
+- Full-data NPE
+- Zero-imputation NPE
+- Mean-imputation NPE
+- Mean-imputation + mask augmentation
+- Learned-imputation NPE
+
+Implemented evaluation and analysis:
+
+- Per-seed posterior sampling
+- TARP calibration diagnostics
+- SBC rank diagnostics
+- Campaign 1 result aggregation
+- Full-data seed diagnostics
+- MMD and C2ST posterior shift metrics
+- Per-observation posterior shift metrics
+- Dataset characterization diagnostics
+
+## Campaign 1
+
+Campaign 1 is the main completed baseline campaign for cheap, reproducible missing-data SBI comparisons.
+
+Problems:
+
+- OUP
+- GLM
+- GLU
+- Ricker
+
+Missingness mechanisms:
+
+- MCAR
+- MAR
+- MNAR
+
+Missingness fractions:
+
+- 10%
+- 25%
+- 50%
+
+Methods:
+
+- Full-data NPE
+- Zero-imputation NPE
+- Mean-imputation NPE
+- Mean-imputation + mask augmentation
+
+Each configuration uses multiple random seeds. The standard Campaign 1 analysis expects 5 seeds per configuration and 560 seed-level rows after aggregation.
 
 ## Implemented Simulators
 
@@ -161,7 +168,7 @@ The package currently requires Python `>=3.11`.
   - `gamma ~ Uniform(0, 1)`
 - observation:
   - one final susceptible/infected/recovered snapshot at `measurement_time`
-  - channels are flattened for the current HDF5 contract
+  - channels are flattened for the HDF5 contract
   - it is not a full time series
 
 For the default `16x16` lattice, `measurement_time=0.25` provides richer active infection structure than later times, which often let epidemics die out on the small grid.
@@ -185,7 +192,7 @@ For the default `16x16` lattice, `measurement_time=0.25` provides richer active 
 - default `x_shape` is approximately `(601,)`
 - output is a downsampled raw voltage trace in `float32`
 
-Raw mode is the default because missingness over time is meaningful for voltage traces. Summary mode is not implemented yet.
+Raw mode is the default because missingness over time is meaningful for voltage traces. Summary mode is not implemented.
 
 ## Missingness
 
@@ -204,18 +211,14 @@ Implemented MNAR masks:
 
 `SelfCensoringMNARMask` supports `score_transform`:
 
-- `identity`: default behavior; score directly from `x_full`.
-- `log1p`: score from `np.log1p(x_full)`. This is useful for nonnegative spiky/count data such as Ricker, but requires all `x_full` values to be nonnegative.
-- `abs`: score from `np.abs(x_full)`, useful for signed vector data when magnitude should drive missingness.
-
-The mask metadata records `name`, `missing_fraction`, `score`, `score_transform`, `constant_score`, and `eps`.
+- `identity`: score directly from `x_full`
+- `log1p`: score from `np.log1p(x_full)`, useful for nonnegative spiky/count data such as Ricker
+- `abs`: score from `np.abs(x_full)`, useful for signed vector data when magnitude should drive missingness
 
 Mask convention:
 
 - `1`: observed
 - `0`: missing
-
-Additional MAR generators using richer observed context are planned but not implemented yet.
 
 ## HDF5 Dataset Contract
 
@@ -247,6 +250,36 @@ Array conventions:
 - `x_obs = x_full * mask`
 
 Metadata is stored as file-level HDF5 attributes. Nested simulator and mask metadata are stored as JSON strings and decoded on load.
+
+## Canonical Dataset Configuration
+
+The current Campaign 1 canonical dataset split is:
+
+| Split | Size |
+| --- | ---: |
+| Train | 45,000 |
+| Validation | 5,000 |
+| Test | 1,000 |
+
+Other constants:
+
+- Dataset seed: `123`
+- Missingness levels: `0.10`, `0.25`, `0.50`
+- MCAR: `point_mcar`
+- MAR: `coordinate_mar`, `mar-mode=increasing`
+- MNAR:
+  - `identity` self-censoring for GLU, GLM, OUP
+  - `log1p` self-censoring for Ricker
+
+Generate Campaign 1 canonical datasets with:
+
+```bash
+bash scripts/generate_campaign1_45k_datasets.sh
+```
+
+The repository also contains older/reference generation commands for larger `90k / 10k / 1k` datasets. Treat those as archival or extended-size runs unless you intentionally want the larger split.
+
+Toy examples below use smaller split sizes for quick local testing.
 
 ## Generate Datasets
 
@@ -400,11 +433,9 @@ Task-specific options:
 
 For Spatial SIR, masking is applied at the spatial cell level. A single cell-level mask is expanded across the susceptible, infected, and recovered channels before flattening, so all three state channels for a cell are observed or missing together.
 
-## Plot Datasets
+## Dataset Diagnostics and Plotting
 
-Use `scripts/plot_dataset_examples.py`.
-
-Example:
+Plot example observations:
 
 ```bash
 PYTHONPATH=src python scripts/plot_dataset_examples.py \
@@ -415,77 +446,154 @@ PYTHONPATH=src python scripts/plot_dataset_examples.py \
   --output outputs/ricker_examples.png
 ```
 
-Spatial SIR plotting example:
+The plotting CLI supports `--plot-type auto`, `timeseries`, `vector`, and `spatial_sir`. `auto` chooses spatial plots for Spatial SIR, vector plots for GLU/GLM, and time-series plots otherwise.
+
+Run dataset characterization diagnostics:
 
 ```bash
-PYTHONPATH=src python scripts/plot_dataset_examples.py \
-  --input data/spatial_sir_coordinate_mar_25.h5 \
-  --plot-type spatial_sir \
-  --num-examples 4 \
-  --output outputs/spatial_sir_examples.png
+PYTHONPATH=src python scripts/diagnose_dataset.py \
+  --dataset-path data/canonical_v1/oup/mcar/oup_mcar_eps025_seed123.h5 \
+  --output-dir outputs/dataset_diagnostics/oup_mcar_eps025 \
+  --split train
 ```
 
-Hodgkin-Huxley plotting example:
+This produces summaries and plots for:
 
-```bash
-PYTHONPATH=src python scripts/plot_dataset_examples.py \
-  --input data/hodgkin_huxley_block_mcar_25.h5 \
-  --plot-type timeseries \
-  --num-examples 4 \
-  --output outputs/hodgkin_huxley_examples.png
-```
+- prior/theta marginals
+- missingness rates and missingness vs observation value
+- `x_full` observation distributions
+- theta-observation correlation heatmaps
 
-The plotting CLI supports:
+## Baseline Experiments
 
-- `--plot-type auto`
-- `--plot-type timeseries`
-- `--plot-type vector`
-- `--plot-type spatial_sir`
-- `--show`
-- `--log-y`
+All NPE experiments use predefined HDF5 train/validation/test splits, train `FixedSplitNPE_C`, sample posteriors on held-out test data, and write per-seed diagnostics.
 
-`auto` chooses spatial plots for metadata task `spatial_sir`, vector plots for metadata task `glu` or `glm`, and time-series plots otherwise. Use `--log-y` for time-series plots such as Ricker if desired.
+Common per-seed outputs:
 
-## NPE Full-Data Experiment
+- `training_summary.png`
+- `posterior_samples.h5`
+- `tarp.png`
+- `sbc_rank_histograms.png`
+- `diagnostics_arrays.npz`
+- `summary.json`
 
-A reusable reference experiment is available at `experiments/npe_full_data/` to reproduce the full-data NPE workflow from `reference.txt` without notebook-only code.
+Experiment root output:
 
-Run with:
+- `all_results.json`
+
+### Full-data NPE
+
+Uses `x_full` only and serves as the reference no-missingness baseline.
 
 ```bash
 PYTHONPATH=src python experiments/npe_full_data/train.py \
-  --config experiments/npe_full_data/config.yaml
+  --config experiments/npe_full_data/oup_config.yaml
 ```
 
-Behavior:
+### Zero/Mean Imputation NPE
 
-- loads a canonical GAPSBI HDF5 dataset and uses `x_full` only
-- scales `theta` using `MinMaxScaler(-1, 1)` fit on train
-- scales `x` using:
-  - `log1p + StandardScaler` for `ricker`
-  - `StandardScaler` otherwise
-- trains `FixedSplitNPE_C` on predefined train/val split
-- computes posterior samples, TARP, and SBC diagnostics per seed
-- writes seed outputs and aggregate results JSON
+Uses `x_obs` after scaling, then imputes missing entries in scaled x-space.
 
-Per-seed `summary.json` and root `all_results.json` include runtime/compute metadata for benchmarking:
+- `zero`: missing entries become `0.0`
+- `mean`: missing entries become observed-only train feature means
 
-- `training_time_sec`
-- `posterior_sampling_time_sec`
-- `diagnostics_time_sec`
-- `total_runtime_sec`
-- `epochs_trained`
-- `best_validation_loss`
-- `num_train_examples`, `num_val_examples`, `num_test_examples`
-- `theta_dim`, `x_dim`
-- `device`, `density_estimator`
-- `num_parameters`
+```bash
+PYTHONPATH=src python experiments/npe_imputation/train.py \
+  --config experiments/npe_imputation/zero_imputation/oup/oup_zero_mcar_eps025_config.yaml
+```
+
+### Mean-imputation + Mask Augmentation
+
+Uses zero-imputed scaled observations concatenated with the binary mask:
+
+```text
+x_aug = [x_imputed, mask]
+```
+
+```bash
+PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
+  --config experiments/npe_mask_augmentation/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
+```
+
+### Learned-imputation NPE
+
+Trains an imputer network jointly with NPE. The imputer predicts missing x entries from `[x_obs_zero_imputed_scaled, mask]`, and the NPE model trains on completed inputs.
+
+```bash
+PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
+  --config experiments/npe_learned_imputation/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
+```
+
+## Evaluation Metrics
+
+### Calibration
+
+- **SBC**: simulation-based calibration ranks. Well-calibrated posteriors should produce approximately uniform rank histograms across posterior samples.
+- **TARP**: tests posterior calibration through expected coverage probability curves. The repository stores TARP plots, TARP arrays, and aggregate errors such as MAE/IAE from the identity line.
+
+### Posterior Shift
+
+- **MMD**: maximum mean discrepancy between posterior sample distributions. The implemented scripts use an RBF kernel with the median heuristic. Larger MMD indicates larger distributional shift.
+- **C2ST**: classifier two-sample test accuracy. A logistic classifier is trained to distinguish posterior samples from two methods or seeds. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger shift.
+
+Posterior shift is computed from existing `posterior_samples.h5` files and does not retrain models.
+
+## Campaign 1 Analysis Scripts
+
+Aggregate seed-level experiment outputs:
+
+```bash
+PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
+  --outputs-dir outputs \
+  --out outputs/campaign1_master_results.csv
+```
+
+Analyze stability and runtime across seeds/configurations:
+
+```bash
+PYTHONPATH=src python scripts/analyze_campaign1_stability.py \
+  --input outputs/campaign1_master_results.csv \
+  --outdir outputs/analysis
+```
+
+Report full-data baseline diagnostics:
+
+```bash
+PYTHONPATH=src python scripts/report_full_data_diagnostics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/full_data_diagnostics_report.txt
+```
+
+Compute aggregate posterior shift between each missing-data run and the matched full-data run:
+
+```bash
+PYTHONPATH=src python scripts/compute_campaign1_shift_metrics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/campaign1_shift_metrics.csv \
+  --summary-out outputs/analysis/campaign1_shift_metrics_summary.csv
+```
+
+Compute full-data seed-to-seed posterior variability:
+
+```bash
+PYTHONPATH=src python scripts/compute_full_data_seed_shift_metrics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/full_data_seed_shift_metrics.csv \
+  --summary-out outputs/analysis/full_data_seed_shift_metrics_summary.csv
+```
+
+Compute per-observation posterior shift, comparing each test observation's missing-data posterior to the matched full-data posterior:
+
+```bash
+PYTHONPATH=src python scripts/compute_campaign1_per_observation_shift_metrics.py \
+  --input outputs/campaign1_master_results.csv \
+  --out outputs/analysis/campaign1_per_observation_shift_metrics.csv \
+  --summary-out outputs/analysis/campaign1_per_observation_shift_metrics_summary.csv
+```
 
 ## Python API Example
 
 ```python
-import numpy as np
-
 from gapsbi.datasets import generate_dataset
 from gapsbi.io import save_gapsbi_hdf5
 from gapsbi.masks import PointMCARMask
@@ -518,7 +626,7 @@ save_gapsbi_hdf5(
 
 ## Tests
 
-The test suite currently covers:
+The test suite covers:
 
 - RNG reproducibility
 - prior sampling and log probabilities
@@ -526,10 +634,12 @@ The test suite currently covers:
 - MCAR, MAR, and MNAR masks
 - HDF5 contract validation and roundtrip behavior
 - dataset generation CLI behavior
-- plotting helper behavior
+- dataset plotting helpers
 - preprocessing/scaling helpers
-- evaluation helper utilities (posterior sampling, SBC, TARP)
-- NPE helper wiring (without slow NPE training)
+- posterior sampling, SBC, and TARP helpers
+- NPE helper wiring without slow training
+- Campaign 1 aggregation and stability analysis
+- posterior shift metric helpers and analysis scripts
 
 Run tests with:
 
@@ -540,177 +650,43 @@ PYTHONPATH=src pytest
 ## Repository Layout
 
 ```text
-configs/
+configs/                         # Shared configs and scratch configuration
+data/                            # Generated canonical and local datasets
 experiments/
+  npe_full_data/                 # Full-data NPE baseline
+  npe_imputation/                # Zero/mean imputation baselines
+  npe_mask_augmentation/         # Imputation + mask baseline
+  npe_learned_imputation/        # Learned-imputation baseline
+outputs/                         # Campaign outputs and analysis products
+outputs_local/                   # Local exploratory outputs
 scripts/
+  generate_dataset.py
+  generate_campaign1_45k_datasets.sh
+  plot_dataset_examples.py
+  diagnose_dataset.py
+  aggregate_campaign1_results.py
+  analyze_campaign1_stability.py
+  report_full_data_diagnostics.py
+  compute_campaign1_shift_metrics.py
+  compute_full_data_seed_shift_metrics.py
+  compute_campaign1_per_observation_shift_metrics.py
 src/gapsbi/
-  diagnostics/
-  evaluation/
-  masks/
-  methods/
-  preprocessing/
-  simulators/
-  utils/
-tests/
-data/
+  diagnostics/                   # Dataset plotting helpers
+  evaluation/                    # Posterior sampling, SBC, TARP
+  masks/                         # MCAR/MAR/MNAR mask generators
+  methods/                       # NPE and imputation utilities
+  preprocessing/                 # Scaling helpers
+  simulators/                    # Benchmark simulators
+  utils/                         # Seeding utilities
+tests/                           # Unit and integration tests
 ```
 
-The codebase is intentionally lightweight at this stage and uses NumPy-first implementations for dataset generation.
+## Future Work
 
-## GAPSBI Canonical Dataset Summary (v1)
+Planned or external extensions include:
 
-Dataset generation logs and effective missing fractions measured from generated datasets.
-
----
-
-### Global Dataset Configuration
-
-| Setting             | Value                           |
-| ------------------- | ------------------------------- |
-| Train size          | 20,000                          |
-| Validation size     | 2,000                           |
-| Test size           | 2,000                           |
-| Seed                | 123                             |
-| Missingness regimes | MCAR, MAR, MNAR                 |
-| Missingness levels  | 10%, 25%, 50%                   |
-| MAR subtype         | coordinate-dependent increasing |
-| MNAR subtype        | self-censoring                  |
-| Spatial SIR grid    | 16 × 16                         |
-| HH downsample       | 20                              |
-| HH duration         | 120                             |
-| HH output length    | 601                             |
-
----
-
-#### GLU
-
-| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
-| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
-| MCAR   | 0.10        | 0.098 | 10    | 10    | none      | ~166k sim/s   |
-| MCAR   | 0.25        | 0.248 | 10    | 10    | none      | ~166k sim/s   |
-| MCAR   | 0.50        | 0.500 | 10    | 10    | none      | ~166k sim/s   |
-| MAR    | 0.10        | 0.100 | 10    | 10    | none      | ~69k sim/s    |
-| MAR    | 0.25        | 0.249 | 10    | 10    | none      | ~69k sim/s    |
-| MAR    | 0.50        | 0.499 | 10    | 10    | none      | ~69k sim/s    |
-| MNAR   | 0.10        | 0.050 | 10    | 10    | identity  | ~84k sim/s    |
-| MNAR   | 0.25        | 0.125 | 10    | 10    | identity  | ~84k sim/s    |
-| MNAR   | 0.50        | 0.249 | 10    | 10    | identity  | ~85k sim/s    |
-
-Notes:
-
-* GLU MNAR gives approximately:
-  ε_eff ≈ 0.5 ε
-* Uses raw vector observations.
-
----
-
-#### GLM (raw)
-
-| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
-| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
-| MCAR   | 0.10        | 0.100 | 10    | 100   | none      | ~79k sim/s    |
-| MCAR   | 0.25        | 0.250 | 10    | 100   | none      | ~79k sim/s    |
-| MCAR   | 0.50        | 0.500 | 10    | 100   | none      | ~79k sim/s    |
-| MAR    | 0.10        | 0.100 | 10    | 100   | none      | ~46k sim/s    |
-| MAR    | 0.25        | 0.250 | 10    | 100   | none      | ~47k sim/s    |
-| MAR    | 0.50        | 0.500 | 10    | 100   | none      | ~47k sim/s    |
-| MNAR   | 0.10        | 0.050 | 10    | 100   | identity  | ~53k sim/s    |
-| MNAR   | 0.25        | 0.125 | 10    | 100   | identity  | ~52k sim/s    |
-| MNAR   | 0.50        | 0.250 | 10    | 100   | identity  | ~52k sim/s    |
-
-Notes:
-
-* GLM MNAR also gives:
-  ε_eff ≈ 0.5 ε
-* Using raw time series rather than summary statistics.
-
----
-
-#### OUP
-
-| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
-| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
-| MCAR   | 0.10        | 0.099 | 2     | 25    | none      | ~12.6k sim/s  |
-| MCAR   | 0.25        | 0.250 | 2     | 25    | none      | ~12.6k sim/s  |
-| MCAR   | 0.50        | 0.500 | 2     | 25    | none      | ~12.5k sim/s  |
-| MAR    | 0.10        | 0.100 | 2     | 25    | none      | ~11.3k sim/s  |
-| MAR    | 0.25        | 0.250 | 2     | 25    | none      | ~11.4k sim/s  |
-| MAR    | 0.50        | 0.500 | 2     | 25    | none      | ~11.4k sim/s  |
-| MNAR   | 0.10        | 0.025 | 2     | 25    | identity  | ~11.7k sim/s  |
-| MNAR   | 0.25        | 0.062 | 2     | 25    | identity  | ~11.7k sim/s  |
-| MNAR   | 0.50        | 0.123 | 2     | 25    | identity  | ~11.7k sim/s  |
-
-Notes:
-
-* OUP MNAR gives:
-  ε_eff ≈ 0.25 ε
-* Strong temporal correlation reduces effective censoring.
-
----
-
-#### Ricker
-
-| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
-| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
-| MCAR   | 0.10        | 0.100 | 2     | 100   | none      | ~850 sim/s    |
-| MCAR   | 0.25        | 0.250 | 2     | 100   | none      | ~850 sim/s    |
-| MCAR   | 0.50        | 0.500 | 2     | 100   | none      | ~850 sim/s    |
-| MAR    | 0.10        | 0.100 | 2     | 100   | none      | ~845 sim/s    |
-| MAR    | 0.25        | 0.250 | 2     | 100   | none      | ~850 sim/s    |
-| MAR    | 0.50        | 0.500 | 2     | 100   | none      | ~850 sim/s    |
-| MNAR   | 0.10        | 0.031 | 2     | 100   | log1p     | ~850 sim/s    |
-| MNAR   | 0.25        | 0.078 | 2     | 100   | log1p     | ~845 sim/s    |
-| MNAR   | 0.50        | 0.156 | 2     | 100   | log1p     | ~840 sim/s    |
-
-Notes:
-
-* Ricker required:
-  log1p score transform
-* Prevents extremely skewed self-censoring probabilities due to count-like heavy tails.
-* Gives:
-  ε_eff ≈ 0.31 ε
-
----
-
-#### Spatial SIR
-
-| Regime | ε (nominal) | ε_eff | θ dim | x dim | Transform | Approx. Speed |
-| ------ | ----------- | ----- | ----- | ----- | --------- | ------------- |
-| MCAR   | 0.10        | 0.100 | 2     | 768   | none      | ~2.45k sim/s  |
-| MCAR   | 0.25        | 0.250 | 2     | 768   | none      | ~2.46k sim/s  |
-| MCAR   | 0.50        | 0.500 | 2     | 768   | none      | ~2.45k sim/s  |
-| MAR    | 0.10        | 0.100 | 2     | 768   | none      | ~2.40k sim/s  |
-| MAR    | 0.25        | 0.250 | 2     | 768   | none      | ~2.39k sim/s  |
-| MAR    | 0.50        | 0.500 | 2     | 768   | none      | ~2.39k sim/s  |
-| MNAR   | 0.10        | 0.024 | 2     | 768   | identity  | ~2.41k sim/s  |
-| MNAR   | 0.25        | 0.059 | 2     | 768   | identity  | ~2.37k sim/s  |
-| MNAR   | 0.50        | 0.118 | 2     | 768   | identity  | ~2.41k sim/s  |
-
-Notes:
-
-* x corresponds to flattened:
-  (3, 16, 16)
-* Shared spatial mask applied across S/I/R channels.
-* Spatial SIR MNAR gives:
-  ε_eff ≈ 0.24 ε
-* Similar behavior to OUP due to strong structured correlations and sparse informative regions.
-
----
-
-#### Hodgkin–Huxley (HH)
-
-| Setting                      | Value      |
-| ---------------------------- | ---------- |
-| θ dim                        | 2          |
-| x dim                        | 601        |
-| Downsample                   | 20         |
-| Duration                     | 120        |
-| dt                           | 0.01       |
-| Approximate generation speed | ~5.5 sim/s |
-
-Notes:
-
-* HH is substantially slower than all other benchmark problems.
-* Full canonical generation of all 9 datasets is expected to take approximately:
-  ~12 hours locally.
-* Uses raw voltage traces.
+- Simformer-style methods
+- RISE-style learned methods beyond the current local baselines
+- additional learned representation methods
+- broader campaign coverage for Spatial SIR and Hodgkin-Huxley
+- larger benchmark suites and collaborator-scale runs
