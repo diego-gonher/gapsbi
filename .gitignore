@@ -10,6 +10,7 @@ src/gapsbi.egg-*
 logs/
 
 # temporary
+paper
 configs
 rise.pdf
 PLAN.MD
