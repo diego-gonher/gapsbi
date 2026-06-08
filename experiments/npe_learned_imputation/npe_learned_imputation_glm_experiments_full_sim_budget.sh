@@ -35,7 +35,7 @@ for CONFIG in "${CONFIGS[@]}"; do
     echo "Log: ${LOG}"
     echo "============================================================"
 
-    python "experiments/${METHOD}/train.py" \
+    PYTHONPATH=src python "experiments/${METHOD}/train.py" \
         --config "experiments/${METHOD}/${CONFIG}" \
         2>&1 | tee "$LOG"
 

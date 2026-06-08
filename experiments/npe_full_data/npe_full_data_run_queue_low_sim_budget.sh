@@ -4,6 +4,10 @@ set -o pipefail
 
 METHOD="npe_full_data"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+cd "$REPO_ROOT"
+
 CONFIGS=(
   "low_sim_budget/oup_config.yaml"
   "low_sim_budget/glm_config.yaml"
@@ -11,21 +15,21 @@ CONFIGS=(
   "low_sim_budget/ricker_config.yaml"
 )
 
-mkdir -p ../../logs/${METHOD}
+mkdir -p "logs/${METHOD}"
 
 for CONFIG in "${CONFIGS[@]}"; do
 
     NAME=$(basename "$CONFIG" _config.yaml)
 
-    LOG="../../logs/${METHOD}/${NAME}.log"
+    LOG="logs/${METHOD}/${NAME}.log"
 
     echo "============================================================"
     echo "Running ${METHOD} :: ${NAME}"
     echo "Started at $(date)"
     echo "============================================================"
 
-    python train.py \
-        --config "$CONFIG" \
+    PYTHONPATH=src python "experiments/${METHOD}/train.py" \
+        --config "experiments/${METHOD}/${CONFIG}" \
         2>&1 | tee "$LOG"
 
     STATUS=${PIPESTATUS[0]}
