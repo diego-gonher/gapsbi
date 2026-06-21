@@ -18,3 +18,4 @@ reference.txt
 *.ipynb
 reference_dataset_generation.txt
 sbi-logs/*
+external_repos/
