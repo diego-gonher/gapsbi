@@ -38,6 +38,12 @@ SEED_LEVEL_COLUMNS = [
     "error",
 ]
 
+REFERENCE_METADATA_COLUMNS = [
+    "reference_input",
+    "reference_run_dir",
+    "reference_budget",
+]
+
 SUMMARY_COLUMNS = [
     "method",
     "problem",
@@ -56,12 +62,21 @@ def main() -> None:
     args = parse_args()
     start_time = time.perf_counter()
     rows = load_master_csv(args.input)
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    reference_rows = load_master_csv(args.reference_input) if args.reference_input else None
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
+    cross_input_reference = args.reference_input is not None
 
     print("Campaign 1 posterior shift metrics")
     print(f"Input CSV: {args.input}")
+    if cross_input_reference:
+        print("Reference mode: cross-input")
+        print(f"Reference input CSV: {args.reference_input}")
+        print(f"Reference CSV rows: {len(reference_rows or [])}")
+    else:
+        print("Reference mode: same-input")
     print(f"Master CSV rows: {len(rows)}")
     print(f"Missing-data runs to process: {len(missing_rows)}")
+    print(f"Full-data reference runs available: {len(full_rows)}")
     print(f"Max samples: {args.max_samples}")
     print(f"Seed: {args.seed}")
     print(f"Seed-level output: {args.out}")
@@ -69,13 +84,16 @@ def main() -> None:
 
     shift_rows = build_shift_metric_rows(
         rows,
+        reference_rows=reference_rows,
+        reference_input=args.reference_input,
         max_samples=args.max_samples,
         seed=args.seed,
         c2st_test_size=args.c2st_test_size,
     )
     summary_rows = build_summary_rows(shift_rows)
 
-    write_csv(args.out, shift_rows, SEED_LEVEL_COLUMNS)
+    seed_level_columns = output_columns(SEED_LEVEL_COLUMNS, include_reference_metadata=cross_input_reference)
+    write_csv(args.out, shift_rows, seed_level_columns)
     write_csv(args.summary_out, summary_rows, SUMMARY_COLUMNS)
 
     ok_rows = sum(row["status"] == "ok" for row in shift_rows)
@@ -99,6 +117,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/campaign1_master_results.csv"),
         help="Path to campaign1_master_results.csv.",
     )
+    add_reference_input_argument(parser)
     parser.add_argument(
         "--out",
         type=Path,
@@ -127,21 +146,83 @@ def load_master_csv(path: Path) -> list[dict[str, Any]]:
         return [dict(row) for row in csv.DictReader(handle)]
 
 
+def add_reference_input_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--reference-input",
+        type=Path,
+        default=None,
+        help=(
+            "Optional campaign1_master_results.csv containing full-data reference runs. "
+            "When omitted, full-data rows from --input are used."
+        ),
+    )
+
+
+def prepare_reference_rows(
+    rows: list[dict[str, Any]],
+    reference_rows: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:
+    comparison_rows = [row for row in rows if row.get("method") != "full_data"]
+    reference_source_rows = rows if reference_rows is None else reference_rows
+    full_rows = {
+        (str(row["problem"]), str(row["seed"])): row
+        for row in reference_source_rows
+        if row.get("method") == "full_data"
+    }
+    return comparison_rows, full_rows
+
+
+def get_full_reference_row(
+    missing_row: dict[str, Any],
+    full_rows: dict[tuple[str, str], dict[str, Any]],
+) -> dict[str, Any]:
+    problem = str(missing_row.get("problem", ""))
+    seed = str(missing_row.get("seed", ""))
+    try:
+        return full_rows[(problem, seed)]
+    except KeyError as exc:
+        raise ValueError(f"Missing full-data reference row for problem={problem} seed={seed}.") from exc
+
+
+def add_reference_metadata(
+    row: dict[str, Any],
+    *,
+    reference_input: Path | None,
+    reference_row: dict[str, Any] | None = None,
+) -> None:
+    if reference_input is None:
+        return
+    row["reference_input"] = str(reference_input)
+    row["reference_run_dir"] = "" if reference_row is None else reference_row.get("run_dir", "")
+    row["reference_budget"] = "" if reference_row is None else reference_budget(reference_row)
+
+
+def reference_budget(reference_row: dict[str, Any]) -> str:
+    for key in ("simulation_budget", "sim_budget", "budget", "num_simulations", "n_simulations"):
+        value = reference_row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def output_columns(columns: list[str], *, include_reference_metadata: bool) -> list[str]:
+    if not include_reference_metadata:
+        return columns
+    return [*columns, *REFERENCE_METADATA_COLUMNS]
+
+
 def build_shift_metric_rows(
     rows: list[dict[str, Any]],
     max_samples: int,
     seed: int,
     c2st_test_size: float,
+    reference_rows: list[dict[str, Any]] | None = None,
+    reference_input: Path | None = None,
 ) -> list[dict[str, Any]]:
     if max_samples < 2:
         raise ValueError("--max-samples must be at least 2.")
 
-    full_rows = {
-        (row["problem"], row["seed"]): row
-        for row in rows
-        if row.get("method") == "full_data"
-    }
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
 
     shift_rows = []
     progress = tqdm(missing_rows, desc="Computing shift metrics", total=len(missing_rows))
@@ -160,6 +241,7 @@ def build_shift_metric_rows(
             rng=rng,
             c2st_test_size=c2st_test_size,
             seed=seed,
+            reference_input=reference_input,
         )
         if row["status"] == "error":
             tqdm.write(
@@ -178,6 +260,7 @@ def build_shift_metric_row(
     rng: np.random.Generator,
     c2st_test_size: float,
     seed: int,
+    reference_input: Path | None = None,
 ) -> dict[str, Any]:
     base_row = {
         "method": missing_row.get("method", ""),
@@ -198,10 +281,12 @@ def build_shift_metric_row(
         "status": "error",
         "error": "",
     }
+    add_reference_metadata(base_row, reference_input=reference_input)
 
     try:
-        full_row = full_rows[(str(missing_row["problem"]), str(missing_row["seed"]))]
+        full_row = get_full_reference_row(missing_row, full_rows)
         base_row["full_run_dir"] = full_row.get("run_dir", "")
+        add_reference_metadata(base_row, reference_input=reference_input, reference_row=full_row)
 
         missing_path = Path(str(missing_row["run_dir"])) / "posterior_samples.h5"
         full_path = Path(str(full_row["run_dir"])) / "posterior_samples.h5"

@@ -17,7 +17,15 @@ from compute_campaign1_per_observation_shift_metrics import (
     subsample_rows,
     validate_matched_posterior_shapes,
 )
-from compute_campaign1_shift_metrics import load_master_csv, write_csv
+from compute_campaign1_shift_metrics import (
+    add_reference_input_argument,
+    add_reference_metadata,
+    get_full_reference_row,
+    load_master_csv,
+    output_columns,
+    prepare_reference_rows,
+    write_csv,
+)
 
 
 OBSERVATION_COLUMNS = [
@@ -73,12 +81,21 @@ def main() -> None:
     args = parse_args()
     start_time = time.perf_counter()
     rows = load_master_csv(args.input)
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    reference_rows = load_master_csv(args.reference_input) if args.reference_input else None
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
+    cross_input_reference = args.reference_input is not None
 
     print("Campaign 1 per-observation posterior moment shift metrics")
     print(f"Input CSV: {args.input}")
+    if cross_input_reference:
+        print("Reference mode: cross-input")
+        print(f"Reference input CSV: {args.reference_input}")
+        print(f"Reference CSV rows: {len(reference_rows or [])}")
+    else:
+        print("Reference mode: same-input")
     print(f"Master CSV rows: {len(rows)}")
     print(f"Missing-data runs to process: {len(missing_rows)}")
+    print(f"Full-data reference runs available: {len(full_rows)}")
     print(f"Max observations: {args.max_observations}")
     print(f"Max samples per observation: {args.max_samples_per_observation}")
     print(f"Jitter: {args.jitter}")
@@ -88,6 +105,8 @@ def main() -> None:
 
     observation_rows = build_observation_metric_rows(
         rows,
+        reference_rows=reference_rows,
+        reference_input=args.reference_input,
         max_observations=args.max_observations,
         max_samples_per_observation=args.max_samples_per_observation,
         jitter=args.jitter,
@@ -95,7 +114,8 @@ def main() -> None:
     )
     summary_rows = build_summary_rows(observation_rows)
 
-    write_csv(args.out, observation_rows, OBSERVATION_COLUMNS)
+    observation_columns = output_columns(OBSERVATION_COLUMNS, include_reference_metadata=cross_input_reference)
+    write_csv(args.out, observation_rows, observation_columns)
     write_csv(args.summary_out, summary_rows, SUMMARY_COLUMNS)
 
     total_runtime_sec = time.perf_counter() - start_time
@@ -117,6 +137,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/campaign1_master_results.csv"),
         help="Path to campaign1_master_results.csv.",
     )
+    add_reference_input_argument(parser)
     parser.add_argument(
         "--out",
         type=Path,
@@ -152,6 +173,8 @@ def build_observation_metric_rows(
     max_samples_per_observation: int,
     jitter: float,
     seed: int,
+    reference_rows: list[dict[str, Any]] | None = None,
+    reference_input: Path | None = None,
 ) -> list[dict[str, Any]]:
     if max_observations < 1:
         raise ValueError("--max-observations must be at least 1.")
@@ -160,12 +183,7 @@ def build_observation_metric_rows(
     if jitter <= 0:
         raise ValueError("--jitter must be positive.")
 
-    full_rows = {
-        (row["problem"], row["seed"]): row
-        for row in rows
-        if row.get("method") == "full_data"
-    }
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
 
     observation_rows: list[dict[str, Any]] = []
     progress = tqdm(missing_rows, desc="Computing moment shifts", total=len(missing_rows))
@@ -186,6 +204,7 @@ def build_observation_metric_rows(
                     max_samples_per_observation=max_samples_per_observation,
                     jitter=jitter,
                     rng=rng,
+                    reference_input=reference_input,
                 )
             )
         except Exception as exc:
@@ -205,8 +224,9 @@ def build_run_observation_metric_rows(
     max_samples_per_observation: int,
     jitter: float,
     rng: np.random.Generator,
+    reference_input: Path | None = None,
 ) -> list[dict[str, Any]]:
-    full_row = full_rows[(str(missing_row["problem"]), str(missing_row["seed"]))]
+    full_row = get_full_reference_row(missing_row, full_rows)
     missing_path = Path(str(missing_row["run_dir"])) / "posterior_samples.h5"
     full_path = Path(str(full_row["run_dir"])) / "posterior_samples.h5"
     missing_post, missing_key = load_posterior_array(missing_path)
@@ -239,17 +259,17 @@ def build_run_observation_metric_rows(
             )
             continue
 
-        rows.append(
-            {
-                "problem": missing_row["problem"],
-                "method": missing_row["method"],
-                "missingness_type": missing_row["missingness"],
-                "missing_fraction": missing_row["epsilon"],
-                "seed": missing_row["seed"],
-                "observation_index": int(observation_index),
-                **metrics,
-            }
-        )
+        row = {
+            "problem": missing_row["problem"],
+            "method": missing_row["method"],
+            "missingness_type": missing_row["missingness"],
+            "missing_fraction": missing_row["epsilon"],
+            "seed": missing_row["seed"],
+            "observation_index": int(observation_index),
+            **metrics,
+        }
+        add_reference_metadata(row, reference_input=reference_input, reference_row=full_row)
+        rows.append(row)
     return rows
 
 

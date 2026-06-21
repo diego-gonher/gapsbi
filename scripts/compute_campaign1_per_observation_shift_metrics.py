@@ -13,9 +13,14 @@ import numpy as np
 from tqdm import tqdm
 
 from compute_campaign1_shift_metrics import (
+    add_reference_input_argument,
+    add_reference_metadata,
     c2st_accuracy,
+    get_full_reference_row,
     load_master_csv,
     mean_metric,
+    output_columns,
+    prepare_reference_rows,
     rbf_mmd2,
     select_posterior_key,
     std_metric,
@@ -71,12 +76,21 @@ def main() -> None:
     args = parse_args()
     start_time = time.perf_counter()
     rows = load_master_csv(args.input)
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    reference_rows = load_master_csv(args.reference_input) if args.reference_input else None
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
+    cross_input_reference = args.reference_input is not None
 
     print("Campaign 1 per-observation posterior shift metrics")
     print(f"Input CSV: {args.input}")
+    if cross_input_reference:
+        print("Reference mode: cross-input")
+        print(f"Reference input CSV: {args.reference_input}")
+        print(f"Reference CSV rows: {len(reference_rows or [])}")
+    else:
+        print("Reference mode: same-input")
     print(f"Master CSV rows: {len(rows)}")
     print(f"Missing-data runs to process: {len(missing_rows)}")
+    print(f"Full-data reference runs available: {len(full_rows)}")
     print(f"Max observations: {args.max_observations}")
     print(f"Max samples per observation: {args.max_samples_per_observation}")
     print(f"Seed: {args.seed}")
@@ -85,6 +99,8 @@ def main() -> None:
 
     shift_rows = build_per_observation_shift_rows(
         rows,
+        reference_rows=reference_rows,
+        reference_input=args.reference_input,
         max_observations=args.max_observations,
         max_samples_per_observation=args.max_samples_per_observation,
         seed=args.seed,
@@ -92,7 +108,8 @@ def main() -> None:
     )
     summary_rows = build_summary_rows(shift_rows)
 
-    write_csv(args.out, shift_rows, SEED_LEVEL_COLUMNS)
+    seed_level_columns = output_columns(SEED_LEVEL_COLUMNS, include_reference_metadata=cross_input_reference)
+    write_csv(args.out, shift_rows, seed_level_columns)
     write_csv(args.summary_out, summary_rows, SUMMARY_COLUMNS)
 
     ok_rows = sum(row["status"] == "ok" for row in shift_rows)
@@ -116,6 +133,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/campaign1_master_results.csv"),
         help="Path to campaign1_master_results.csv.",
     )
+    add_reference_input_argument(parser)
     parser.add_argument(
         "--out",
         type=Path,
@@ -151,18 +169,15 @@ def build_per_observation_shift_rows(
     max_samples_per_observation: int,
     seed: int,
     c2st_test_size: float,
+    reference_rows: list[dict[str, Any]] | None = None,
+    reference_input: Path | None = None,
 ) -> list[dict[str, Any]]:
     if max_observations < 1:
         raise ValueError("--max-observations must be at least 1.")
     if max_samples_per_observation < 2:
         raise ValueError("--max-samples-per-observation must be at least 2.")
 
-    full_rows = {
-        (row["problem"], row["seed"]): row
-        for row in rows
-        if row.get("method") == "full_data"
-    }
-    missing_rows = [row for row in rows if row.get("method") != "full_data"]
+    missing_rows, full_rows = prepare_reference_rows(rows, reference_rows=reference_rows)
 
     shift_rows = []
     progress = tqdm(missing_rows, desc="Computing per-observation shifts", total=len(missing_rows))
@@ -182,6 +197,7 @@ def build_per_observation_shift_rows(
             rng=rng,
             c2st_test_size=c2st_test_size,
             seed=seed,
+            reference_input=reference_input,
         )
         if row["status"] == "error":
             tqdm.write(
@@ -201,6 +217,7 @@ def build_per_observation_shift_row(
     rng: np.random.Generator,
     c2st_test_size: float,
     seed: int,
+    reference_input: Path | None = None,
 ) -> dict[str, Any]:
     base_row = {
         "method": missing_row.get("method", ""),
@@ -226,10 +243,12 @@ def build_per_observation_shift_row(
         "status": "error",
         "error": "",
     }
+    add_reference_metadata(base_row, reference_input=reference_input)
 
     try:
-        full_row = full_rows[(str(missing_row["problem"]), str(missing_row["seed"]))]
+        full_row = get_full_reference_row(missing_row, full_rows)
         base_row["full_run_dir"] = full_row.get("run_dir", "")
+        add_reference_metadata(base_row, reference_input=reference_input, reference_row=full_row)
 
         missing_path = Path(str(missing_row["run_dir"])) / "posterior_samples.h5"
         full_path = Path(str(full_row["run_dir"])) / "posterior_samples.h5"
