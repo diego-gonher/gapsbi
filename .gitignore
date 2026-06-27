@@ -10,12 +10,8 @@ src/gapsbi.egg-*
 logs/
 
 # temporary
-paper
-configs
-rise.pdf
-PLAN.MD
-reference.txt
 *.ipynb
-reference_dataset_generation.txt
-sbi-logs/*
+ignore/
+sbi-logs/
 external_repos/
+paper/
