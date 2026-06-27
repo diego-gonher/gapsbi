@@ -49,8 +49,9 @@ Implemented methods:
 - Full-data NPE
 - Zero-imputation NPE
 - Mean-imputation NPE
-- Mean-imputation + mask augmentation
+- Zero-imputation + mask augmentation NPE
 - Learned-imputation NPE
+- GAPSBI-native RISE-style probabilistic imputation + NPE
 
 Implemented evaluation and analysis:
 
@@ -91,7 +92,9 @@ Methods:
 - Full-data NPE
 - Zero-imputation NPE
 - Mean-imputation NPE
-- Mean-imputation + mask augmentation
+- Zero-imputation + mask augmentation NPE
+- Learned-imputation NPE
+- GAPSBI-native RISE-style probabilistic imputation + NPE
 
 Each configuration uses 10 fixed random seeds. Campaign 1 is organized into simulation-budget-specific config trees:
 
@@ -471,7 +474,7 @@ This produces summaries and plots for:
 
 ## Baseline Experiments
 
-All NPE experiments use predefined HDF5 train/validation/test splits, train `FixedSplitNPE_C`, sample posteriors on held-out test data, and write per-seed diagnostics.
+All NPE experiments use predefined HDF5 train/validation/test splits, use `FixedSplitNPE_C` or the same fixed-split posterior construction, sample posteriors on held-out test data, and write per-seed diagnostics. The configured density estimator is `nsf` unless explicitly changed in a config.
 
 Common per-seed outputs:
 
@@ -521,7 +524,7 @@ PYTHONPATH=src python experiments/npe_imputation/train.py \
   --config experiments/npe_imputation/zero_imputation/low_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
 ```
 
-### Mean-imputation + Mask Augmentation
+### Zero-imputation + Mask Augmentation
 
 Uses zero-imputed scaled observations concatenated with the binary mask:
 
@@ -555,6 +558,22 @@ Low simulation budget:
 ```bash
 PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
   --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
+```
+
+### RISE-style Probabilistic Imputation + NPE
+
+Trains a lightweight probabilistic MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, predicts a Gaussian completion distribution for `x`, and the NPE loss is optimized on completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
+
+```bash
+PYTHONPATH=src python experiments/rise/train.py \
+  --config experiments/rise/full_sim_budget/oup/oup_rise_mcar_eps025_config.yaml
+```
+
+Low simulation budget:
+
+```bash
+PYTHONPATH=src python experiments/rise/train.py \
+  --config experiments/rise/low_sim_budget/oup/oup_rise_mcar_eps025_config.yaml
 ```
 
 ## Evaluation Metrics
@@ -725,8 +744,9 @@ data/                            # Generated canonical and local datasets
 experiments/
   npe_full_data/                 # Full-data NPE baseline
   npe_imputation/                # Zero/mean imputation baselines
-  npe_mask_augmentation/         # Imputation + mask baseline
+  npe_mask_augmentation/         # Zero-imputation + mask baseline
   npe_learned_imputation/        # Learned-imputation baseline
+  rise/                          # GAPSBI-native RISE-style imputation + NPE
 outputs/                         # Campaign outputs and analysis products
 outputs_low_sim_budget/          # Low simulation-budget campaign outputs
 outputs_local/                   # Local exploratory outputs
@@ -759,7 +779,7 @@ tests/                           # Unit and integration tests
 Planned or external extensions include:
 
 - Simformer-style methods
-- RISE-style learned methods beyond the current local baselines
+- paper-complete or external RISE variants beyond the current GAPSBI-native baseline
 - additional learned representation methods
 - broader campaign coverage for Spatial SIR and Hodgkin-Huxley
 - larger benchmark suites and collaborator-scale runs
