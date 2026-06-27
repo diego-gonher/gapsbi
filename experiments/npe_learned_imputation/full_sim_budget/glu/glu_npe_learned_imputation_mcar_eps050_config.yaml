@@ -28,4 +28,4 @@ evaluation:
 
 sampling:
   reject_outside_prior: false
-  max_sampling_time: null
+  max_sampling_time: 30.0
