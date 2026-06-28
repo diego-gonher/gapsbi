@@ -50,6 +50,8 @@ Implemented methods:
 - Zero-imputation NPE
 - Mean-imputation NPE
 - Zero-imputation + mask augmentation NPE
+- Masked-pooling embedding NPE
+- Masked-attention embedding NPE
 - Learned-imputation NPE
 - GAPSBI-native RISE-style probabilistic imputation + NPE
 
@@ -93,6 +95,8 @@ Methods:
 - Zero-imputation NPE
 - Mean-imputation NPE
 - Zero-imputation + mask augmentation NPE
+- Masked-pooling embedding NPE
+- Masked-attention embedding NPE
 - Learned-imputation NPE
 - GAPSBI-native RISE-style probabilistic imputation + NPE
 
@@ -544,6 +548,31 @@ PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
   --config experiments/npe_mask_augmentation/low_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
 ```
 
+### Masked Embedding NPE
+
+Uses the same zero-imputed scaled observation and binary mask condition as mask augmentation, but passes `[x_zero_imputed_scaled, mask]` through a small mask-aware embedding network before NSF-NPE. The pooling variant tokenizes each feature, adds learned feature embeddings, uses masked mean pooling over observed tokens, and appends a compact mask summary. The attention variant adds one shallow self-attention layer with missing entries excluded as attention keys/values, while still preserving the mask pattern through the mask-summary path.
+
+The default configs intentionally keep the encoders small:
+
+```text
+token_dim = 32
+context_dim = 64
+mask_summary_dim = 16
+masked_attention: num_layers = 1, num_heads = 2
+```
+
+```bash
+PYTHONPATH=src python experiments/masked_embedding/train.py \
+  --config experiments/masked_embedding/masked_pooling/full_sim_budget/oup/oup_npe_masked_pooling_mcar_eps025_config.yaml
+```
+
+```bash
+PYTHONPATH=src python experiments/masked_embedding/train.py \
+  --config experiments/masked_embedding/masked_attention/full_sim_budget/oup/oup_npe_masked_attention_mcar_eps025_config.yaml
+```
+
+Full-budget masked embedding outputs are written directly under `outputs/npe_masked_pooling/` and `outputs/npe_masked_attention/`. Low simulation-budget configs are under `experiments/masked_embedding/{masked_pooling,masked_attention}/low_sim_budget/` and write under `outputs_low_sim_budget/npe_masked_pooling/` and `outputs_low_sim_budget/npe_masked_attention/`.
+
 ### Learned-imputation NPE
 
 Trains an imputer network jointly with NPE. The imputer predicts missing x entries from `[x_obs_zero_imputed_scaled, mask]`, and the NPE model trains on completed inputs.
@@ -745,6 +774,7 @@ experiments/
   npe_full_data/                 # Full-data NPE baseline
   npe_imputation/                # Zero/mean imputation baselines
   npe_mask_augmentation/         # Zero-imputation + mask baseline
+  masked_embedding/              # Masked pooling/attention embedding NPE baselines
   npe_learned_imputation/        # Learned-imputation baseline
   rise/                          # GAPSBI-native RISE-style imputation + NPE
 outputs/                         # Campaign outputs and analysis products
