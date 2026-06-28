@@ -25,9 +25,8 @@ from gapsbi.io import load_gapsbi_hdf5
 from gapsbi.methods.learned_imputation import (
     parse_missingness_and_epsilon,
     prepare_learned_imputation_arrays,
-    train_learned_imputation_npe,
 )
-from gapsbi.methods.sbi_npe import FixedSplitNPE_C
+from gapsbi.methods.rise import train_rise_npe
 from gapsbi.utils.seeding import set_all_seeds
 
 matplotlib.use("Agg")
@@ -35,7 +34,7 @@ matplotlib.use("Agg")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train learned deterministic imputation + NPE baseline."
+        description="Train GAPSBI-native RISE-style probabilistic imputation + NPE."
     )
     parser.add_argument(
         "--config",
@@ -85,63 +84,116 @@ def _count_trainable_parameters(*modules: torch.nn.Module) -> int:
     return count
 
 
-def _resolve_imputer_type(problem: str, imputer_cfg: dict[str, Any]) -> str:
-    requested = str(imputer_cfg.get("imputer_type", "auto")).lower()
-    if requested == "auto":
-        return "cnn" if problem in {"oup", "ricker"} else "mlp"
-    return requested
+def _resolve_use_mask_head(
+    *,
+    rise_cfg: dict[str, Any],
+    mechanism: str,
+    metadata: dict[str, Any],
+) -> tuple[bool, str]:
+    raw = rise_cfg.get("use_mask_head", "auto")
+    if isinstance(raw, bool):
+        return raw, "config"
+
+    raw_str = str(raw).lower()
+    if raw_str in {"true", "1", "yes"}:
+        return True, "config"
+    if raw_str in {"false", "0", "no"}:
+        return False, "config"
+    if raw_str != "auto":
+        raise ValueError(
+            "rise.use_mask_head must be true, false, or auto, "
+            f"got {raw!r}."
+        )
+
+    metadata_mechanism = _metadata_missingness(metadata)
+    resolved_mechanism = metadata_mechanism or mechanism
+    if resolved_mechanism == "mnar":
+        return True, "auto_mnar"
+    if resolved_mechanism in {"mcar", "mar"}:
+        return False, f"auto_{resolved_mechanism}"
+    return False, "auto_unknown_default_false"
+
+
+def _metadata_missingness(metadata: dict[str, Any]) -> str | None:
+    for key in ("missingness", "mechanism", "missingness_type"):
+        value = metadata.get(key)
+        if value is None:
+            continue
+        value_str = str(value).lower()
+        if value_str in {"mcar", "mar", "mnar"}:
+            return value_str
+    return None
+
+
+def _validate_rise_config(rise_cfg: dict[str, Any]) -> None:
+    imputer_type = str(rise_cfg.get("imputer_type", "mlp")).lower()
+    if imputer_type != "mlp":
+        raise ValueError(
+            "GAPSBI-native RISE currently supports only rise.imputer_type='mlp', "
+            f"got {imputer_type!r}."
+        )
 
 
 def _plot_training_history(
-    history: list[dict[str, float]],
+    train_history: list[dict[str, float]],
+    validation_history: list[dict[str, float]],
     output_path: Path,
 ) -> None:
-    if not history:
+    if not train_history or not validation_history:
         return
-    epochs = [int(h["epoch"]) for h in history]
-    train_total = [float(h["train_total_loss"]) for h in history]
-    val_total = [float(h["val_total_loss"]) for h in history]
-    train_npe = [float(h["train_npe_loss"]) for h in history]
-    val_npe = [float(h["val_npe_loss"]) for h in history]
-    train_recon = [float(h["train_recon_loss"]) for h in history]
-    val_recon = [float(h["val_recon_loss"]) for h in history]
 
-    fig, axes = plt.subplots(1, 3, figsize=(12, 3))
-    axes[0].plot(epochs, train_total, label="train")
-    axes[0].plot(epochs, val_total, label="val")
-    axes[0].set_title("Total loss")
-    axes[0].set_xlabel("Epoch")
-    axes[0].legend()
+    epochs = [int(h["epoch"]) for h in train_history]
+    metrics = [
+        ("total_loss", "Total loss"),
+        ("npe_loss", "NPE loss"),
+        ("np_loss", "RISE NLL"),
+        ("mask_loss", "Mask loss"),
+    ]
 
-    axes[1].plot(epochs, train_npe, label="train")
-    axes[1].plot(epochs, val_npe, label="val")
-    axes[1].set_title("NPE loss")
-    axes[1].set_xlabel("Epoch")
-    axes[1].legend()
-
-    axes[2].plot(epochs, train_recon, label="train")
-    axes[2].plot(epochs, val_recon, label="val")
-    axes[2].set_title("Recon loss")
-    axes[2].set_xlabel("Epoch")
-    axes[2].legend()
+    fig, axes = plt.subplots(1, 4, figsize=(15, 3))
+    for ax, (key, title) in zip(axes, metrics, strict=True):
+        ax.plot(epochs, [float(h[key]) for h in train_history], label="train")
+        ax.plot(epochs, [float(h[key]) for h in validation_history], label="val")
+        ax.set_title(title)
+        ax.set_xlabel("Epoch")
+        ax.legend()
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
-def _complete_with_imputer(
+def _complete_with_rise_imputer(
     imputer: torch.nn.Module,
     x_obs_scaled: torch.Tensor,
     mask: torch.Tensor,
     device: torch.device,
 ) -> torch.Tensor:
     with torch.no_grad():
-        x_hat = imputer(x_obs_scaled.to(device), mask.to(device))
-        x_completed = mask.to(device) * x_obs_scaled.to(device) + (
-            1.0 - mask.to(device)
-        ) * x_hat
-    return x_completed.detach().cpu()
+        output = imputer(x_obs_scaled.to(device), mask.to(device))
+    return output.completed_x.detach().cpu()
+
+
+def _method_metadata(
+    *,
+    rise_cfg: dict[str, Any],
+    use_mask_head: bool,
+    use_mask_head_source: str,
+) -> dict[str, Any]:
+    return {
+        "name": "npe_rise",
+        "variant": "gapsbi_native_mlp",
+        "use_mask_head": bool(use_mask_head),
+        "use_mask_head_source": use_mask_head_source,
+        "lambda_np": float(rise_cfg.get("lambda_np", 1.0)),
+        "lambda_mask": float(rise_cfg.get("lambda_mask", 1.0)),
+        "hidden_dim": int(rise_cfg.get("hidden_dim", 128)),
+        "num_layers": int(rise_cfg.get("num_layers", 2)),
+        "dropout": float(rise_cfg.get("dropout", 0.0)),
+        "latent_dim": int(rise_cfg.get("latent_dim", 16)),
+        "min_std": float(rise_cfg.get("min_std", 1e-3)),
+        "imputer_type": "mlp",
+    }
 
 
 def main() -> None:
@@ -154,25 +206,36 @@ def main() -> None:
     max_train_samples = config.get("max_train_samples")
     max_val_samples = config.get("max_val_samples")
     npe_cfg = config["npe"]
+    rise_cfg = config["rise"]
     eval_cfg = config["evaluation"]
-    imputer_cfg = config["imputer"]
     sampling_cfg = config.get("sampling", {})
     reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
     max_sampling_time = sampling_cfg.get("max_sampling_time", None)
     if max_sampling_time is not None:
         max_sampling_time = float(max_sampling_time)
 
+    _validate_rise_config(rise_cfg)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     problem = infer_problem_name(config.get("problem"), dataset_path)
     mechanism, epsilon = parse_missingness_and_epsilon(dataset_path)
-    dataset, _metadata = load_gapsbi_hdf5(dataset_path)
+    dataset, metadata = load_gapsbi_hdf5(dataset_path)
     dataset = apply_train_val_sample_limits(
         dataset,
         max_train_samples=max_train_samples,
         max_val_samples=max_val_samples,
     )
     prepared = prepare_learned_imputation_arrays(dataset=dataset, problem=problem)
+    use_mask_head, use_mask_head_source = _resolve_use_mask_head(
+        rise_cfg=rise_cfg,
+        mechanism=mechanism,
+        metadata=metadata,
+    )
+    method_metadata = _method_metadata(
+        rise_cfg=rise_cfg,
+        use_mask_head=use_mask_head,
+        use_mask_head_source=use_mask_head_source,
+    )
 
     theta_train = prepared["theta_train"]
     theta_val = prepared["theta_val"]
@@ -214,24 +277,42 @@ def main() -> None:
         model_checkpoint_path: Path | None = None
         try:
             training_start = time.perf_counter()
-            learned = train_learned_imputation_npe(
-                problem=problem,
+            rise_result = train_rise_npe(
                 theta_train=theta_train,
-                x_obs_train_scaled=x_obs_train_scaled,
-                x_full_train_scaled=x_full_train_scaled,
+                x_full_train=x_full_train_scaled,
+                x_obs_train=x_obs_train_scaled,
                 mask_train=mask_train,
                 theta_val=theta_val,
-                x_obs_val_scaled=x_obs_val_scaled,
-                x_full_val_scaled=x_full_val_scaled,
+                x_full_val=x_full_val_scaled,
+                x_obs_val=x_obs_val_scaled,
                 mask_val=mask_val,
                 prior=prior,
-                config={**npe_cfg, **imputer_cfg},
+                density_estimator=str(npe_cfg.get("density_estimator", "nsf")),
+                device=str(npe_cfg.get("device", "cpu")),
+                npe_training_batch_size=int(
+                    npe_cfg.get("training_batch_size", 256)
+                ),
+                npe_stop_after_epochs=int(npe_cfg.get("stop_after_epochs", 20)),
+                npe_max_num_epochs=int(npe_cfg.get("max_num_epochs", 5000)),
+                learning_rate=float(rise_cfg.get("learning_rate", 1e-3)),
+                rise_batch_size=int(rise_cfg.get("batch_size", 256)),
+                rise_max_num_epochs=int(rise_cfg.get("max_num_epochs", 5000)),
+                rise_stop_after_epochs=int(rise_cfg.get("stop_after_epochs", 20)),
+                hidden_dim=int(rise_cfg.get("hidden_dim", 128)),
+                num_layers=int(rise_cfg.get("num_layers", 2)),
+                dropout=float(rise_cfg.get("dropout", 0.0)),
+                latent_dim=int(rise_cfg.get("latent_dim", 16)),
+                lambda_np=float(rise_cfg.get("lambda_np", 1.0)),
+                lambda_mask=float(rise_cfg.get("lambda_mask", 1.0)),
+                use_mask_head=use_mask_head,
+                min_std=float(rise_cfg.get("min_std", 1e-3)),
+                seed=seed,
             )
             training_end = time.perf_counter()
             training_time_sec = training_end - training_start
             model_checkpoint_path = save_model_checkpoint(
                 seed_output_dir / DEFAULT_CHECKPOINT_NAME,
-                method="npe_learned_imputation",
+                method="npe_rise",
                 problem=problem,
                 seed=seed,
                 config=config,
@@ -241,29 +322,32 @@ def main() -> None:
                 x_scaling_metadata=x_scaling_metadata,
                 theta_dim=theta_dim,
                 x_dim=x_dim,
-                density_estimator=learned.density_estimator,
+                density_estimator=rise_result.density_estimator,
                 extra={
                     "config_path": str(args.config),
                     "density_estimator_name": str(
                         npe_cfg.get("density_estimator", "nsf")
                     ),
-                    "imputer_type": _resolve_imputer_type(problem, imputer_cfg),
-                    "imputer_class": f"{type(learned.imputer).__module__}."
-                    f"{type(learned.imputer).__qualname__}",
-                    "imputer_state_dict": learned.imputer.state_dict(),
-                    "imputer_config": imputer_cfg,
-                    "best_epoch": int(learned.best_epoch),
-                    "best_val_loss": float(learned.best_val_loss),
-                    "stopped_epoch": int(learned.stopped_epoch),
+                    "imputer_class": f"{type(rise_result.imputer).__module__}."
+                    f"{type(rise_result.imputer).__qualname__}",
+                    "imputer_state_dict": rise_result.imputer.state_dict(),
+                    "rise_config": method_metadata,
+                    "best_epoch": int(rise_result.best_epoch),
+                    "best_val_loss": float(rise_result.best_val_loss),
+                    "stopped_epoch": int(rise_result.stopped_epoch),
                 },
             )
 
             training_summary_path = seed_output_dir / "training_summary.png"
-            _plot_training_history(learned.train_history, training_summary_path)
+            _plot_training_history(
+                rise_result.train_history,
+                rise_result.validation_history,
+                training_summary_path,
+            )
 
             device = torch.device(str(npe_cfg.get("device", "cpu")))
-            x_test_completed = _complete_with_imputer(
-                learned.imputer,
+            x_test_completed = _complete_with_rise_imputer(
+                rise_result.imputer,
                 x_obs_test_scaled,
                 mask_test,
                 device,
@@ -278,7 +362,7 @@ def main() -> None:
                 num_sampling_fallbacks,
                 fallback_sampling_used,
             ) = sample_posteriors_once(
-                posterior=learned.posterior,
+                posterior=rise_result.posterior,
                 x_eval=x_eval,
                 num_posterior_samples=num_posterior_samples,
                 seed=seed + 10_000,
@@ -289,7 +373,9 @@ def main() -> None:
             sampling_end = time.perf_counter()
             posterior_sampling_time_sec = sampling_end - sampling_start
 
-            posterior_samples_scaled_np = posterior_samples_scaled.detach().cpu().numpy()
+            posterior_samples_scaled_np = (
+                posterior_samples_scaled.detach().cpu().numpy()
+            )
             theta_eval_scaled_np = theta_eval.detach().cpu().numpy()
             num_eval, num_samples, theta_dim_local = posterior_samples_scaled_np.shape
 
@@ -303,10 +389,14 @@ def main() -> None:
                 f.create_dataset("theta_true", data=theta_eval_np)
                 f.create_dataset("theta_true_scaled", data=theta_eval_scaled_np)
                 f.create_dataset("theta_posterior", data=posterior_samples_np)
-                f.create_dataset("theta_posterior_scaled", data=posterior_samples_scaled_np)
+                f.create_dataset(
+                    "theta_posterior_scaled",
+                    data=posterior_samples_scaled_np,
+                )
                 f.attrs["dataset_path"] = str(dataset_path)
                 f.attrs["problem"] = problem
-                f.attrs["method"] = "npe_learned_imputation"
+                f.attrs["method"] = "npe_rise"
+                f.attrs["method_variant"] = "gapsbi_native_mlp"
                 f.attrs["seed"] = int(seed)
                 f.attrs["num_eval"] = int(num_eval)
                 f.attrs["num_posterior_samples"] = int(num_samples)
@@ -372,7 +462,8 @@ def main() -> None:
                 "problem": problem,
                 "missingness": mechanism,
                 "epsilon": epsilon,
-                "method": "npe_learned_imputation",
+                "method": method_metadata,
+                "method_name": "npe_rise",
                 "dataset_path": str(dataset_path),
                 "x_transform": x_scaling_metadata["transform"],
                 "x_dim": int(x_dim),
@@ -382,16 +473,16 @@ def main() -> None:
                 "num_test_examples": int(theta_test.shape[0]),
                 "max_train_samples": max_train_samples,
                 "max_val_samples": max_val_samples,
-                "lambda_recon": float(imputer_cfg.get("lambda_recon", 1.0)),
-                "imputer_type": _resolve_imputer_type(problem, imputer_cfg),
                 "density_estimator": str(npe_cfg.get("density_estimator", "nsf")),
-                "best_val_loss": float(learned.best_val_loss),
-                "best_epoch": int(learned.best_epoch),
-                "stopped_epoch": int(learned.stopped_epoch),
+                "best_val_loss": float(rise_result.best_val_loss),
+                "best_epoch": int(rise_result.best_epoch),
+                "stopped_epoch": int(rise_result.stopped_epoch),
+                "final_train_loss": float(rise_result.final_train_loss),
+                "final_validation_loss": float(rise_result.final_validation_loss),
                 "num_parameters": int(
                     _count_trainable_parameters(
-                        learned.imputer,
-                        learned.density_estimator,
+                        rise_result.imputer,
+                        rise_result.density_estimator,
                     )
                 ),
                 "training_time_sec": float(training_time_sec),
@@ -424,12 +515,11 @@ def main() -> None:
                 "problem": problem,
                 "missingness": mechanism,
                 "epsilon": epsilon,
-                "method": "npe_learned_imputation",
+                "method": method_metadata,
+                "method_name": "npe_rise",
                 "dataset_path": str(dataset_path),
                 "max_train_samples": max_train_samples,
                 "max_val_samples": max_val_samples,
-                "lambda_recon": float(imputer_cfg.get("lambda_recon", 1.0)),
-                "imputer_type": _resolve_imputer_type(problem, imputer_cfg),
                 "density_estimator": str(npe_cfg.get("density_estimator", "nsf")),
                 "total_runtime_sec": float(total_end - total_start),
                 "model_checkpoint_path": (

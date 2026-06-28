@@ -17,6 +17,7 @@ from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
 from sbi.utils import BoxUniform
 
+from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
 from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
@@ -240,6 +241,26 @@ def main() -> None:
         posterior = inference.build_posterior(density_estimator)
         epochs_trained, best_validation_loss = _extract_training_metadata(inference)
         num_parameters = _count_trainable_parameters(density_estimator)
+        model_checkpoint_path = save_model_checkpoint(
+            seed_output_dir / DEFAULT_CHECKPOINT_NAME,
+            method="npe_full_data",
+            problem=problem,
+            seed=seed,
+            config=config,
+            dataset_path=dataset_path,
+            theta_scaler=theta_scaler,
+            x_scaler=x_scaler,
+            x_scaling_metadata=x_scaling_metadata,
+            theta_dim=theta_dim,
+            x_dim=x_dim,
+            density_estimator=density_estimator,
+            extra={
+                "config_path": str(args.config),
+                "density_estimator_name": str(npe_cfg["density_estimator"]),
+                "epochs_trained": epochs_trained,
+                "best_validation_loss": best_validation_loss,
+            },
+        )
 
         _ = plot_summary(
             inference,
@@ -382,6 +403,7 @@ def main() -> None:
             "num_sbc_eval": int(test_sample),
             "num_sbc_posterior_samples": int(num_posterior_samples),
             "posterior_samples_path": str(posterior_h5_path),
+            "model_checkpoint_path": str(model_checkpoint_path),
             "training_summary_path": str(training_summary_path),
             "tarp_plot_path": str(tarp_plot_path),
             "sbc_plot_path": str(sbc_plot_path),

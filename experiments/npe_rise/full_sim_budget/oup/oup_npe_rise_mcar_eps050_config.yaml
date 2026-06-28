@@ -1,0 +1,41 @@
+dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps050_seed123.h5
+problem: oup
+output_dir: outputs/npe_rise/oup/mcar/oup_npe_rise_mcar_eps050
+seeds:
+- 26485
+- 976532
+- 1172401
+- 512417
+- 8991732
+- 314159
+- 271828
+- 161803
+- 141421
+- 173205
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+rise:
+  lambda_np: 1.0
+  lambda_mask: 1.0
+  learning_rate: 0.001
+  batch_size: 256
+  max_num_epochs: 5000
+  stop_after_epochs: 20
+  imputer_type: mlp
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.0
+  latent_dim: 16
+  min_std: 0.001
+  use_mask_head: auto
+evaluation:
+  test_sample: 1000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
+sampling:
+  reject_outside_prior: false
+  max_sampling_time: 30.0

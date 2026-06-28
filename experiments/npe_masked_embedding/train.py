@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ import yaml
 from sbi.analysis import plot_summary
 from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
+from sbi.neural_nets import posterior_nn
 from sbi.utils import BoxUniform
 
 from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
@@ -23,10 +25,11 @@ from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
 from gapsbi.evaluation.tarp import compute_tarp_from_samples
 from gapsbi.io import load_gapsbi_hdf5
-from gapsbi.methods.imputation import (
-    compute_observed_feature_means,
-    mean_impute,
-    zero_impute,
+from gapsbi.methods.learned_imputation import parse_missingness_and_epsilon
+from gapsbi.methods.masked_embedding import (
+    MaskedEmbeddingConfig,
+    make_masked_embedding,
+    make_zero_imputed_mask_condition,
 )
 from gapsbi.methods.sbi_npe import FixedSplitNPE_C
 from gapsbi.preprocessing.scalers import (
@@ -41,7 +44,7 @@ matplotlib.use("Agg")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train NPE baselines with naive imputation on x_obs."
+        description="Train lightweight masked embedding + NPE baselines."
     )
     parser.add_argument(
         "--config",
@@ -140,18 +143,27 @@ def _extract_training_metadata(inference: Any) -> tuple[int | None, float | None
     return epochs_trained, best_validation_loss
 
 
-def _count_trainable_parameters(module: Any) -> int:
+def _count_trainable_parameters(module: torch.nn.Module) -> int:
     return int(sum(p.numel() for p in module.parameters() if p.requires_grad))
 
 
-def resolve_method_name(imputation_method: str) -> str:
-    if imputation_method == "zero":
-        return "npe_zero_imputation"
-    if imputation_method == "mean":
-        return "npe_mean_imputation"
-    raise ValueError(
-        "imputation.method must be one of {'zero', 'mean'}, "
-        f"got {imputation_method!r}."
+def _embedding_config(raw_cfg: dict[str, Any], x_dim: int) -> MaskedEmbeddingConfig:
+    embedding_type = str(raw_cfg.get("type", "masked_attention")).lower()
+    if embedding_type not in {"masked_pooling", "masked_attention"}:
+        raise ValueError(
+            "embedding.type must be one of {'masked_pooling', 'masked_attention'}, "
+            f"got {embedding_type!r}."
+        )
+    return MaskedEmbeddingConfig(
+        embedding_type=embedding_type,  # type: ignore[arg-type]
+        x_dim=int(x_dim),
+        token_dim=int(raw_cfg.get("token_dim", 32)),
+        context_dim=int(raw_cfg.get("context_dim", 64)),
+        num_heads=int(raw_cfg.get("num_heads", 2)),
+        num_layers=int(raw_cfg.get("num_layers", 1)),
+        ff_multiplier=int(raw_cfg.get("ff_multiplier", 2)),
+        dropout=float(raw_cfg.get("dropout", 0.0)),
+        mask_summary_dim=int(raw_cfg.get("mask_summary_dim", 16)),
     )
 
 
@@ -166,17 +178,19 @@ def main() -> None:
     max_val_samples = config.get("max_val_samples")
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
+    embedding_cfg_raw = config["embedding"]
     sampling_cfg = config.get("sampling", {})
     reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
     max_sampling_time = sampling_cfg.get("max_sampling_time", None)
     if max_sampling_time is not None:
         max_sampling_time = float(max_sampling_time)
-    imputation_method = str(config["imputation"]["method"]).lower()
-    method_name = resolve_method_name(imputation_method)
 
+    embedding_type = str(embedding_cfg_raw.get("type", "masked_attention")).lower()
+    method_name = f"npe_{embedding_type}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     problem = infer_problem_name(config.get("problem"), dataset_path)
+    mechanism, epsilon = parse_missingness_and_epsilon(dataset_path)
     dataset, _metadata = load_gapsbi_hdf5(dataset_path)
     dataset = apply_train_val_sample_limits(
         dataset,
@@ -221,33 +235,22 @@ def main() -> None:
     mask_val = torch.tensor(mask_val_np, dtype=torch.float32)
     mask_test = torch.tensor(mask_test_np, dtype=torch.float32)
 
-    if imputation_method == "zero":
-        x_train = zero_impute(x_obs_scaled=x_obs_train_scaled, mask=mask_train)
-        x_val = zero_impute(x_obs_scaled=x_obs_val_scaled, mask=mask_val)
-        x_test = zero_impute(x_obs_scaled=x_obs_test_scaled, mask=mask_test)
-    else:
-        feature_means = compute_observed_feature_means(
-            x_obs_scaled_train=x_obs_train_scaled,
-            mask_train=mask_train,
-        )
-        x_train = mean_impute(
-            x_obs_scaled=x_obs_train_scaled,
-            mask=mask_train,
-            feature_means=feature_means,
-        )
-        x_val = mean_impute(
-            x_obs_scaled=x_obs_val_scaled,
-            mask=mask_val,
-            feature_means=feature_means,
-        )
-        x_test = mean_impute(
-            x_obs_scaled=x_obs_test_scaled,
-            mask=mask_test,
-            feature_means=feature_means,
-        )
+    x_train = make_zero_imputed_mask_condition(
+        x_obs_scaled=x_obs_train_scaled,
+        mask=mask_train,
+    )
+    x_val = make_zero_imputed_mask_condition(
+        x_obs_scaled=x_obs_val_scaled,
+        mask=mask_val,
+    )
+    x_test = make_zero_imputed_mask_condition(
+        x_obs_scaled=x_obs_test_scaled,
+        mask=mask_test,
+    )
 
     theta_dim = theta_train.shape[1]
-    x_dim = x_train.shape[1]
+    x_dim_original = x_obs_train_scaled.shape[1]
+    x_dim_augmented = x_train.shape[1]
     num_train_examples = theta_train.shape[0]
     num_val_examples = theta_val.shape[0]
     num_test_examples = theta_test.shape[0]
@@ -258,7 +261,6 @@ def main() -> None:
     num_alpha_grid = int(eval_cfg["num_alpha_grid"])
 
     ensure_eval_size(test_sample=test_sample, n_test=theta_test.shape[0])
-
     all_results: list[dict[str, Any]] = []
 
     for seed in seeds:
@@ -270,14 +272,24 @@ def main() -> None:
         seed_output_dir = output_dir / f"seed_{seed}"
         seed_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Total seed runtime (train + posterior sampling + diagnostics + saving).
         total_start = time.perf_counter()
+        embedding_config = _embedding_config(embedding_cfg_raw, x_dim=x_dim_original)
+        embedding_net = make_masked_embedding(embedding_config)
+        density_builder = posterior_nn(
+            model=str(npe_cfg["density_estimator"]),
+            embedding_net=embedding_net,
+            z_score_x=str(npe_cfg.get("z_score_x", "none")),
+            z_score_theta=str(npe_cfg.get("z_score_theta", "independent")),
+            hidden_features=int(npe_cfg.get("hidden_features", 50)),
+            num_transforms=int(npe_cfg.get("num_transforms", 5)),
+            num_bins=int(npe_cfg.get("num_bins", 10)),
+        )
 
         theta_trainval = torch.cat([theta_train, theta_val], dim=0)
         x_trainval = torch.cat([x_train, x_val], dim=0)
         inference = FixedSplitNPE_C(
             prior=prior,
-            density_estimator=npe_cfg["density_estimator"],
+            density_estimator=density_builder,
             device=str(npe_cfg.get("device", "cpu")),
         )
         inference.append_simulations(theta_trainval, x_trainval)
@@ -286,7 +298,6 @@ def main() -> None:
             n_val=num_val_examples,
         )
 
-        # Time only the call to inference.train(...).
         training_start = time.perf_counter()
         density_estimator = inference.train(
             training_batch_size=int(npe_cfg["training_batch_size"]),
@@ -300,6 +311,7 @@ def main() -> None:
         posterior = inference.build_posterior(density_estimator)
         epochs_trained, best_validation_loss = _extract_training_metadata(inference)
         num_parameters = _count_trainable_parameters(density_estimator)
+        embedding_num_parameters = _count_trainable_parameters(embedding_net)
         model_checkpoint_path = save_model_checkpoint(
             seed_output_dir / DEFAULT_CHECKPOINT_NAME,
             method=method_name,
@@ -311,14 +323,18 @@ def main() -> None:
             x_scaler=x_scaler,
             x_scaling_metadata=x_scaling_metadata,
             theta_dim=theta_dim,
-            x_dim=x_dim,
+            x_dim=x_dim_original,
             density_estimator=density_estimator,
             extra={
                 "config_path": str(args.config),
                 "density_estimator_name": str(npe_cfg["density_estimator"]),
                 "epochs_trained": epochs_trained,
                 "best_validation_loss": best_validation_loss,
-                "imputation_method": imputation_method,
+                "embedding_config": asdict(embedding_config),
+                "embedding_class": f"{type(embedding_net).__module__}."
+                f"{type(embedding_net).__qualname__}",
+                "embedding_num_parameters": int(embedding_num_parameters),
+                "x_dim_augmented": int(x_dim_augmented),
             },
         )
 
@@ -334,7 +350,6 @@ def main() -> None:
         theta_eval = theta_test[:test_sample]
         x_eval = x_test[:test_sample]
 
-        # Time posterior sampling only.
         sampling_start = time.perf_counter()
         (
             posterior_samples_scaled,
@@ -378,7 +393,6 @@ def main() -> None:
             f.attrs["theta_dim"] = int(theta_dim_local)
             f.attrs["x_transform"] = x_scaling_metadata["transform"]
 
-        # Time diagnostics: TARP/SBC computations and diagnostic artifacts.
         diagnostics_start = time.perf_counter()
 
         set_all_seeds(seed + 20_000)
@@ -431,14 +445,23 @@ def main() -> None:
             ranks=ranks.detach().cpu().numpy(),
         )
 
+        diagnostics_end = time.perf_counter()
+        diagnostics_time_sec = diagnostics_end - diagnostics_start
+        total_end = time.perf_counter()
+        total_runtime_sec = total_end - total_start
+
         summary = {
             "seed": int(seed),
             "problem": problem,
+            "missingness": mechanism,
+            "epsilon": epsilon,
             "method": method_name,
             "dataset_path": str(dataset_path),
             "x_transform": x_scaling_metadata["transform"],
             "training_time_sec": float(training_time_sec),
             "posterior_sampling_time_sec": float(posterior_sampling_time_sec),
+            "diagnostics_time_sec": float(diagnostics_time_sec),
+            "total_runtime_sec": float(total_runtime_sec),
             "epochs_trained": epochs_trained,
             "best_validation_loss": best_validation_loss,
             "num_train_examples": int(num_train_examples),
@@ -447,16 +470,32 @@ def main() -> None:
             "max_train_samples": max_train_samples,
             "max_val_samples": max_val_samples,
             "theta_dim": int(theta_dim),
-            "x_dim": int(x_dim),
+            "x_dim": int(x_dim_original),
+            "x_dim_augmented": int(x_dim_augmented),
             "device": str(npe_cfg.get("device", "cpu")),
             "density_estimator": str(npe_cfg["density_estimator"]),
             "num_parameters": int(num_parameters),
-            "imputation_method": imputation_method,
-            "uses_mask": False,
+            "embedding_num_parameters": int(embedding_num_parameters),
+            "embedding_type": embedding_config.embedding_type,
+            "embedding_token_dim": int(embedding_config.token_dim),
+            "embedding_context_dim": int(embedding_config.context_dim),
+            "embedding_num_heads": int(embedding_config.num_heads),
+            "embedding_num_layers": int(embedding_config.num_layers),
+            "embedding_ff_multiplier": int(embedding_config.ff_multiplier),
+            "embedding_dropout": float(embedding_config.dropout),
+            "embedding_mask_summary_dim": int(embedding_config.mask_summary_dim),
+            "z_score_x": str(npe_cfg.get("z_score_x", "none")),
+            "z_score_theta": str(npe_cfg.get("z_score_theta", "independent")),
+            "hidden_features": int(npe_cfg.get("hidden_features", 50)),
+            "num_transforms": int(npe_cfg.get("num_transforms", 5)),
+            "num_bins": int(npe_cfg.get("num_bins", 10)),
+            "imputation_method": "zero",
+            "uses_mask": True,
             "x_source": "x_obs",
             "x_scaler_fit_source": "x_full_train",
             "imputation_space": "scaled",
             "mask_convention": "1=observed,0=missing",
+            "augmentation": "concat_x_zero_imputed_mask_with_embedding_net",
             "reject_outside_prior": bool(reject_outside_prior),
             "max_sampling_time": max_sampling_time,
             "num_sampling_failures": int(num_sampling_failures),
@@ -475,13 +514,6 @@ def main() -> None:
             "sbc_plot_path": str(sbc_plot_path),
             "diagnostics_arrays_path": str(diagnostics_arrays_path),
         }
-        diagnostics_end = time.perf_counter()
-        diagnostics_time_sec = diagnostics_end - diagnostics_start
-        total_end = time.perf_counter()
-        total_runtime_sec = total_end - total_start
-
-        summary["diagnostics_time_sec"] = float(diagnostics_time_sec)
-        summary["total_runtime_sec"] = float(total_runtime_sec)
 
         with (seed_output_dir / "summary.json").open("w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)

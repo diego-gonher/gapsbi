@@ -483,11 +483,14 @@ All NPE experiments use predefined HDF5 train/validation/test splits, use `Fixed
 Common per-seed outputs:
 
 - `training_summary.png`
+- `model_checkpoint.pt`
 - `posterior_samples.h5`
 - `tarp.png`
 - `sbc_rank_histograms.png`
 - `diagnostics_arrays.npz`
 - `summary.json`
+
+`model_checkpoint.pt` is a lightweight PyTorch checkpoint for the trained per-seed model. It stores the trained density-estimator weights, preprocessing scalers and scaling metadata, run config, dataset path, dimensions, and method-specific extras such as masked-embedding config or learned/RISE imputer weights. It is intended for reconstructing the trained model for later inference without rerunning training.
 
 Experiment root output:
 
@@ -562,16 +565,16 @@ masked_attention: num_layers = 1, num_heads = 2
 ```
 
 ```bash
-PYTHONPATH=src python experiments/masked_embedding/train.py \
-  --config experiments/masked_embedding/masked_pooling/full_sim_budget/oup/oup_npe_masked_pooling_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_masked_embedding/train.py \
+  --config experiments/npe_masked_embedding/npe_masked_pooling/full_sim_budget/oup/oup_npe_masked_pooling_mcar_eps025_config.yaml
 ```
 
 ```bash
-PYTHONPATH=src python experiments/masked_embedding/train.py \
-  --config experiments/masked_embedding/masked_attention/full_sim_budget/oup/oup_npe_masked_attention_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_masked_embedding/train.py \
+  --config experiments/npe_masked_embedding/npe_masked_attention/full_sim_budget/oup/oup_npe_masked_attention_mcar_eps025_config.yaml
 ```
 
-Full-budget masked embedding outputs are written directly under `outputs/npe_masked_pooling/` and `outputs/npe_masked_attention/`. Low simulation-budget configs are under `experiments/masked_embedding/{masked_pooling,masked_attention}/low_sim_budget/` and write under `outputs_low_sim_budget/npe_masked_pooling/` and `outputs_low_sim_budget/npe_masked_attention/`.
+Full-budget masked embedding outputs are written directly under `outputs/npe_masked_pooling/` and `outputs/npe_masked_attention/`. Low simulation-budget configs are under `experiments/npe_masked_embedding/{npe_masked_pooling,npe_masked_attention}/low_sim_budget/` and write under `outputs_low_sim_budget/npe_masked_pooling/` and `outputs_low_sim_budget/npe_masked_attention/`.
 
 ### Learned-imputation NPE
 
@@ -589,20 +592,20 @@ PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
   --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
 ```
 
-### RISE-style Probabilistic Imputation + NPE
+### NPE RISE-style Probabilistic Imputation
 
 Trains a lightweight probabilistic MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, predicts a Gaussian completion distribution for `x`, and the NPE loss is optimized on completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
 
 ```bash
-PYTHONPATH=src python experiments/rise/train.py \
-  --config experiments/rise/full_sim_budget/oup/oup_rise_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_rise/train.py \
+  --config experiments/npe_rise/full_sim_budget/oup/oup_npe_rise_mcar_eps025_config.yaml
 ```
 
 Low simulation budget:
 
 ```bash
-PYTHONPATH=src python experiments/rise/train.py \
-  --config experiments/rise/low_sim_budget/oup/oup_rise_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_rise/train.py \
+  --config experiments/npe_rise/low_sim_budget/oup/oup_npe_rise_mcar_eps025_config.yaml
 ```
 
 ## Evaluation Metrics
@@ -774,9 +777,9 @@ experiments/
   npe_full_data/                 # Full-data NPE baseline
   npe_imputation/                # Zero/mean imputation baselines
   npe_mask_augmentation/         # Zero-imputation + mask baseline
-  masked_embedding/              # Masked pooling/attention embedding NPE baselines
+  npe_masked_embedding/          # Masked pooling/attention embedding NPE baselines
   npe_learned_imputation/        # Learned-imputation baseline
-  rise/                          # GAPSBI-native RISE-style imputation + NPE
+  npe_rise/                      # GAPSBI-native RISE-style imputation + NPE
 outputs/                         # Campaign outputs and analysis products
 outputs_low_sim_budget/          # Low simulation-budget campaign outputs
 outputs_local/                   # Local exploratory outputs

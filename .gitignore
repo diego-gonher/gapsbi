@@ -15,3 +15,4 @@ ignore/
 sbi-logs/
 external_repos/
 paper/
+scripts/compare_full_vs_low_budget_campaign1.py
