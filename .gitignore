@@ -5,6 +5,7 @@ __pycache__/
 .ipynb_checkpoints/
 data/
 outputs*/
+references/reference_posteriors_v*/
 .env
 src/gapsbi.egg-*
 logs/
