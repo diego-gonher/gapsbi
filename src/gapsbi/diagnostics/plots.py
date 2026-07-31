@@ -222,6 +222,134 @@ def plot_vector_dataset_examples(
     plt.close(fig)
 
 
+def plot_lotka_volterra_example(
+    ax: Any,
+    x_full: np.ndarray,
+    x_obs: np.ndarray,
+    mask: np.ndarray,
+    theta: np.ndarray | None = None,
+    timepoints: np.ndarray | None = None,
+    log_y: bool = True,
+) -> None:
+    """Plot one interleaved Lotka-Volterra observation with paired population masks."""
+    x_full = np.asarray(x_full, dtype=float)
+    x_obs = np.asarray(x_obs, dtype=float)
+    mask = np.asarray(mask).astype(bool)
+
+    if x_full.ndim != 1 or x_obs.shape != x_full.shape or mask.shape != x_full.shape:
+        raise ValueError("x_full, x_obs, and mask must be 1D arrays with matching shapes.")
+    if x_full.shape[0] % 2 != 0:
+        raise ValueError("Lotka-Volterra observations must have even interleaved length.")
+
+    states_full = x_full.reshape((-1, 2))
+    states_obs = x_obs.reshape((-1, 2))
+    state_mask = mask.reshape((-1, 2))
+    time = np.arange(states_full.shape[0]) if timepoints is None else np.asarray(timepoints)
+    if time.shape != (states_full.shape[0],):
+        raise ValueError("timepoints must have one value per LV timepoint.")
+
+    labels = ("prey", "predator")
+    colors = ("C0", "C2")
+    for population in range(2):
+        observed = state_mask[:, population]
+        missing = ~observed
+        ax.plot(
+            time,
+            states_full[:, population],
+            color=colors[population],
+            linewidth=1.5,
+            label=f"{labels[population]} full",
+        )
+        ax.scatter(
+            time[observed],
+            states_obs[observed, population],
+            color=colors[population],
+            edgecolor="white",
+            linewidth=0.4,
+            s=20,
+            label=f"{labels[population]} observed",
+            zorder=3,
+        )
+        if np.any(missing):
+            ax.scatter(
+                time[missing],
+                states_full[missing, population],
+                color=colors[population],
+                marker="x",
+                s=30,
+                label=f"{labels[population]} missing",
+                zorder=4,
+            )
+
+    theta_title = format_theta(theta, max_values=4)
+    if theta_title:
+        ax.set_title(theta_title)
+    if log_y:
+        ax.set_yscale("log")
+
+    ax.set_xlabel("time")
+    ax.set_ylabel("population")
+    ax.legend(fontsize="x-small", ncols=2)
+
+
+def plot_lotka_volterra_dataset_examples(
+    dataset_split: dict[str, np.ndarray],
+    indices: np.ndarray,
+    output_path: str | os.PathLike[str],
+    split_name: str = "train",
+    timepoints: np.ndarray | None = None,
+    log_y: bool = True,
+    figsize: tuple[float, float] | None = None,
+) -> None:
+    """Plot selected interleaved Lotka-Volterra examples from one dataset split."""
+    x_full = np.asarray(dataset_split["x_full"])
+    x_obs = np.asarray(dataset_split["x_obs"])
+    mask = np.asarray(dataset_split["mask"])
+    theta = np.asarray(dataset_split["theta"]) if "theta" in dataset_split else None
+    indices = np.asarray(indices, dtype=int)
+
+    if x_full.ndim != 2 or x_obs.shape != x_full.shape or mask.shape != x_full.shape:
+        raise ValueError("x_full, x_obs, and mask must have shape (N, 2*T).")
+    if x_full.shape[1] % 2 != 0:
+        raise ValueError("Lotka-Volterra observations must have even interleaved length.")
+    if np.any(indices < 0) or np.any(indices >= x_full.shape[0]):
+        raise IndexError("indices must be valid rows of dataset_split.")
+
+    n_examples = int(indices.shape[0])
+    if n_examples < 1:
+        raise ValueError("indices must contain at least one example.")
+
+    n_cols = min(2, n_examples)
+    n_rows = math.ceil(n_examples / n_cols)
+    if figsize is None:
+        figsize = (6.0 * n_cols, 3.5 * n_rows)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
+    flat_axes = axes.ravel()
+
+    for ax, index in zip(flat_axes, indices, strict=False):
+        example_theta = None if theta is None else theta[index]
+        plot_lotka_volterra_example(
+            ax,
+            x_full[index],
+            x_obs[index],
+            mask[index],
+            theta=example_theta,
+            timepoints=timepoints,
+            log_y=log_y,
+        )
+        ax.set_title(f"{split_name}[{index}]" + (f"\n{ax.get_title()}" if ax.get_title() else ""))
+
+    for ax in flat_axes[n_examples:]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
 def plot_spatial_sir_dataset_examples(
     dataset_split: dict[str, np.ndarray],
     indices: np.ndarray,

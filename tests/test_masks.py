@@ -4,10 +4,19 @@ import pytest
 from gapsbi.masks import (
     BlockMCARMask,
     CoordinateMARMask,
+    LotkaVolterraLogTotalMNARMask,
+    LotkaVolterraTimeBlockMCARMask,
+    LotkaVolterraTimeMARMask,
     PointMCARMask,
     SelfCensoringMNARMask,
 )
-from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator, RickerSimulator
+from gapsbi.simulators import (
+    GLMSimulator,
+    GLUSimulator,
+    LotkaVolterraSimulator,
+    OUPSimulator,
+    RickerSimulator,
+)
 
 
 def _assert_binary(mask: np.ndarray) -> None:
@@ -447,6 +456,79 @@ def test_coordinate_mar_is_compatible_with_implemented_simulators(simulator) -> 
     theta = simulator.sample_theta(3, rng)
     x_full = simulator.simulate(theta, rng)
     mask = CoordinateMARMask(missing_fraction=0.25).generate(x_full, theta, rng)
+
+    assert mask.shape == x_full.shape
+    assert mask.dtype == np.int8
+    _assert_binary(mask)
+
+
+def test_lotka_volterra_time_block_mcar_pairs_population_entries() -> None:
+    x_full = np.ones((4, 100))
+    mask = LotkaVolterraTimeBlockMCARMask(
+        missing_fraction=0.25,
+        block_size=5,
+    ).generate(x_full, theta=None, rng=np.random.default_rng(123))
+    reshaped = mask.reshape((4, 50, 2))
+
+    assert mask.shape == x_full.shape
+    assert mask.dtype == np.int8
+    _assert_binary(mask)
+    assert np.all(reshaped[:, :, 0] == reshaped[:, :, 1])
+
+
+def test_lotka_volterra_time_mar_increasing_masks_later_times_more() -> None:
+    x_full = np.ones((5_000, 100))
+    mask = LotkaVolterraTimeMARMask(
+        missing_fraction=0.4,
+        mode="increasing",
+    ).generate(x_full, theta=None, rng=np.random.default_rng(123))
+    missing_rate_by_time = np.mean(mask.reshape((5_000, 50, 2))[:, :, 0] == 0, axis=0)
+
+    assert missing_rate_by_time[-1] > missing_rate_by_time[0]
+    assert missing_rate_by_time[-1] > missing_rate_by_time[10]
+
+
+def test_lotka_volterra_time_mar_decreasing_masks_earlier_times_more() -> None:
+    x_full = np.ones((5_000, 100))
+    mask = LotkaVolterraTimeMARMask(
+        missing_fraction=0.4,
+        mode="decreasing",
+    ).generate(x_full, theta=None, rng=np.random.default_rng(123))
+    missing_rate_by_time = np.mean(mask.reshape((5_000, 50, 2))[:, :, 0] == 0, axis=0)
+
+    assert missing_rate_by_time[0] > missing_rate_by_time[-1]
+    assert missing_rate_by_time[0] > missing_rate_by_time[-11]
+
+
+def test_lotka_volterra_log_total_mnar_masks_high_total_times_more() -> None:
+    totals = np.linspace(1.0, 100.0, 50)
+    states = np.stack([0.7 * totals, 0.3 * totals], axis=1)
+    x_full = np.tile(states.reshape(1, -1), (5_000, 1))
+    mask = LotkaVolterraLogTotalMNARMask(missing_fraction=0.8).generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+    missing_rate_by_time = np.mean(mask.reshape((5_000, 50, 2))[:, :, 0] == 0, axis=0)
+
+    assert missing_rate_by_time[-1] > missing_rate_by_time[0]
+    assert missing_rate_by_time[-1] > missing_rate_by_time[10]
+
+
+@pytest.mark.parametrize(
+    "mask_generator",
+    [
+        LotkaVolterraTimeBlockMCARMask(missing_fraction=0.25, block_size=5),
+        LotkaVolterraTimeMARMask(missing_fraction=0.25),
+        LotkaVolterraLogTotalMNARMask(missing_fraction=0.25),
+    ],
+)
+def test_lotka_volterra_masks_are_compatible_with_lotka_volterra_simulator(mask_generator) -> None:
+    rng = np.random.default_rng(123)
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    theta = simulator.sample_theta(3, rng)
+    x_full = simulator.simulate(theta, rng)
+    mask = mask_generator.generate(x_full, theta, rng)
 
     assert mask.shape == x_full.shape
     assert mask.dtype == np.int8

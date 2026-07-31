@@ -5,6 +5,9 @@ from gapsbi.datasets import generate_dataset, generate_split
 from gapsbi.masks import (
     BlockMCARMask,
     CoordinateMARMask,
+    LotkaVolterraLogTotalMNARMask,
+    LotkaVolterraTimeBlockMCARMask,
+    LotkaVolterraTimeMARMask,
     PointMCARMask,
     SelfCensoringMNARMask,
 )
@@ -13,6 +16,7 @@ from gapsbi.simulators import (
     GLMSimulator,
     GLUSimulator,
     HodgkinHuxleySimulator,
+    LotkaVolterraSimulator,
     OUPSimulator,
     RickerSimulator,
     SpatialSIRSimulator,
@@ -530,3 +534,98 @@ def test_hodgkin_huxley_is_compatible_with_current_masks(mask_generator) -> None
     split = generate_split(simulator, mask_generator, n=2, rng=make_rng(123))
 
     assert split["mask"].shape == split["x_full"].shape
+
+
+def test_lotka_volterra_basic_properties() -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=50)
+
+    assert simulator.theta_dim == 4
+    assert simulator.x_shape == (100,)
+
+
+def test_lotka_volterra_sample_theta_is_positive_lognormal() -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12)
+    theta = simulator.sample_theta(8, np.random.default_rng(123))
+
+    assert theta.shape == (8, 4)
+    assert np.all(theta > 0)
+
+
+def test_lotka_volterra_simulate_single_shape_positive_and_finite() -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    theta = np.array([0.8, 0.05, 0.8, 0.05])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (24,)
+    assert np.all(np.isfinite(x))
+    assert np.all(x > 0)
+
+
+def test_lotka_volterra_simulate_batch_shape() -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    theta = np.array([[0.8, 0.05, 0.8, 0.05], [0.5, 0.03, 1.0, 0.04]])
+    x = simulator.simulate(theta, np.random.default_rng(123))
+
+    assert x.shape == (2, 24)
+
+
+def test_lotka_volterra_same_seed_is_reproducible() -> None:
+    simulator_a = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    simulator_b = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    theta = np.array([[0.8, 0.05, 0.8, 0.05], [0.5, 0.03, 1.0, 0.04]])
+    rng_a = np.random.default_rng(123)
+    rng_b = np.random.default_rng(123)
+
+    theta_a = simulator_a.sample_theta(5, rng_a)
+    theta_b = simulator_b.sample_theta(5, rng_b)
+    x_a = simulator_a.simulate(theta, rng_a)
+    x_b = simulator_b.simulate(theta, rng_b)
+
+    np.testing.assert_array_equal(theta_a, theta_b)
+    np.testing.assert_array_equal(x_a, x_b)
+
+
+def test_lotka_volterra_metadata_documents_interleaved_layout_and_prior() -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    metadata = simulator.metadata()
+
+    assert metadata["name"] == "lotka_volterra"
+    assert metadata["observation_layout"] == "interleaved_prey_predator"
+    assert metadata["prior"] == "lognormal"
+    assert len(metadata["timepoints"]) == 12
+
+
+@pytest.mark.parametrize(
+    "mask_generator",
+    [
+        PointMCARMask(missing_fraction=0.25),
+        LotkaVolterraTimeBlockMCARMask(missing_fraction=0.25, block_size=3),
+        LotkaVolterraTimeMARMask(missing_fraction=0.25),
+        LotkaVolterraLogTotalMNARMask(missing_fraction=0.25),
+    ],
+)
+def test_lotka_volterra_is_compatible_with_generate_split_and_dataset(mask_generator) -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+
+    split = generate_split(simulator, mask_generator, n=3, rng=make_rng(123))
+    dataset = generate_dataset(simulator, mask_generator, n_train=3, n_val=2, n_test=1, seed=123)
+
+    assert split["x_full"].shape == (3, 24)
+    assert split["mask"].shape == split["x_full"].shape
+    assert dataset["train"]["x_full"].shape == (3, 24)
+
+
+@pytest.mark.parametrize(
+    "mask_generator",
+    [
+        LotkaVolterraTimeBlockMCARMask(missing_fraction=0.25, block_size=3),
+        LotkaVolterraTimeMARMask(missing_fraction=0.25),
+        LotkaVolterraLogTotalMNARMask(missing_fraction=0.25),
+    ],
+)
+def test_lotka_volterra_time_masks_share_status_across_populations(mask_generator) -> None:
+    simulator = LotkaVolterraSimulator(num_timepoints=12, days=5.0)
+    split = generate_split(simulator, mask_generator, n=4, rng=make_rng(123))
+    mask = split["mask"].reshape((4, 12, 2))
+
+    assert np.all(mask[:, :, 0] == mask[:, :, 1])

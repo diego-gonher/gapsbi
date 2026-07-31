@@ -10,6 +10,8 @@ import numpy as np
 
 from gapsbi.diagnostics.plots import (
     format_theta,
+    plot_lotka_volterra_dataset_examples,
+    plot_lotka_volterra_example,
     plot_spatial_sir_dataset_examples,
     plot_vector_dataset_examples,
     plot_vector_example,
@@ -61,6 +63,57 @@ def test_plot_vector_dataset_examples_saves_file(tmp_path) -> None:
     assert output_path.stat().st_size > 0
 
 
+def test_plot_lotka_volterra_example_runs_with_interleaved_arrays() -> None:
+    fig, ax = plt.subplots()
+    states = np.array([[10.0, 2.0], [12.0, 3.0], [8.0, 5.0]])
+
+    plot_lotka_volterra_example(
+        ax,
+        x_full=states.reshape(-1),
+        x_obs=(states * np.array([[1, 1], [0, 0], [1, 1]])).reshape(-1),
+        mask=np.array([[1, 1], [0, 0], [1, 1]]).reshape(-1),
+        theta=np.array([0.8, 0.05, 0.8, 0.05]),
+        timepoints=np.array([0.0, 1.0, 2.0]),
+    )
+
+    assert ax.get_xlabel() == "time"
+    assert ax.get_ylabel() == "population"
+    plt.close(fig)
+
+
+def test_plot_lotka_volterra_dataset_examples_saves_file(tmp_path) -> None:
+    states = np.array(
+        [
+            [[10.0, 2.0], [12.0, 3.0], [8.0, 5.0]],
+            [[9.0, 1.5], [11.0, 2.5], [7.0, 4.0]],
+        ]
+    )
+    mask = np.array(
+        [
+            [[1, 1], [0, 0], [1, 1]],
+            [[1, 1], [1, 1], [0, 0]],
+        ],
+        dtype=np.int8,
+    )
+    dataset_split = {
+        "theta": np.ones((2, 4)),
+        "x_full": states.reshape((2, -1)),
+        "x_obs": (states * mask).reshape((2, -1)),
+        "mask": mask.reshape((2, -1)),
+    }
+    output_path = tmp_path / "lotka_volterra_examples.png"
+
+    plot_lotka_volterra_dataset_examples(
+        dataset_split,
+        np.array([0, 1]),
+        output_path,
+        timepoints=np.array([0.0, 1.0, 2.0]),
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
 def test_plot_script_auto_mode_chooses_vector_for_glu() -> None:
     script_path = Path(__file__).parents[1] / "scripts" / "plot_dataset_examples.py"
     spec = importlib.util.spec_from_file_location("plot_dataset_examples_script", script_path)
@@ -70,6 +123,7 @@ def test_plot_script_auto_mode_chooses_vector_for_glu() -> None:
     spec.loader.exec_module(module)
 
     assert module.resolve_plot_type("auto", {"task": "glu"}) == "vector"
+    assert module.resolve_plot_type("auto", {"task": "lotka_volterra"}) == "lotka_volterra"
     assert module.resolve_plot_type("auto", {"task": "ricker"}) == "timeseries"
     assert module.resolve_plot_type("timeseries", {"task": "glu"}) == "timeseries"
 

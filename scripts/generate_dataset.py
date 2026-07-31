@@ -10,6 +10,9 @@ from gapsbi.io import save_gapsbi_hdf5
 from gapsbi.masks import (
     BlockMCARMask,
     CoordinateMARMask,
+    LotkaVolterraLogTotalMNARMask,
+    LotkaVolterraTimeBlockMCARMask,
+    LotkaVolterraTimeMARMask,
     PointMCARMask,
     SelfCensoringMNARMask,
 )
@@ -17,6 +20,7 @@ from gapsbi.simulators import (
     GLMSimulator,
     GLUSimulator,
     HodgkinHuxleySimulator,
+    LotkaVolterraSimulator,
     OUPSimulator,
     RickerSimulator,
     SpatialSIRSimulator,
@@ -27,12 +31,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
     parser.add_argument(
         "--task",
-        choices=["ricker", "oup", "glu", "glm", "spatial_sir", "hodgkin_huxley"],
+        choices=[
+            "ricker",
+            "oup",
+            "glu",
+            "glm",
+            "spatial_sir",
+            "hodgkin_huxley",
+            "lotka_volterra",
+        ],
         default="ricker",
     )
     parser.add_argument(
         "--mask",
-        choices=["point_mcar", "block_mcar", "self_censoring_mnar", "coordinate_mar"],
+        choices=[
+            "point_mcar",
+            "block_mcar",
+            "self_censoring_mnar",
+            "coordinate_mar",
+            "lv_time_block_mcar",
+            "lv_time_mar",
+            "lv_log_total_mnar",
+        ],
         default="point_mcar",
     )
     parser.add_argument("--missing-fraction", type=float, default=0.25)
@@ -51,6 +71,9 @@ def main() -> None:
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--summary", choices=["sufficient", "raw"], default="sufficient")
     parser.add_argument("--simulator-scale", type=float, default=0.1)
+    parser.add_argument("--num-timepoints", type=int, default=50)
+    parser.add_argument("--days", type=float, default=20.0)
+    parser.add_argument("--observation-noise-scale", type=float, default=0.1)
     parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--t-on", type=float, default=10.0)
     parser.add_argument("--curr-level", type=float, default=5e-4)
@@ -89,13 +112,19 @@ def main() -> None:
             simulation_step_size=args.simulation_step_size,
             initial_infection_rate=args.initial_infection_rate,
         )
-    else:
+    elif args.task == "hodgkin_huxley":
         simulator = HodgkinHuxleySimulator(
             duration=120.0 if args.duration is None else args.duration,
             dt=args.dt,
             t_on=args.t_on,
             curr_level=args.curr_level,
             downsample=args.downsample,
+        )
+    else:
+        simulator = LotkaVolterraSimulator(
+            num_timepoints=args.num_timepoints,
+            days=args.days,
+            observation_noise_scale=args.observation_noise_scale,
         )
     if args.mask == "point_mcar":
         mask_generator = PointMCARMask(missing_fraction=args.missing_fraction)
@@ -109,13 +138,30 @@ def main() -> None:
             missing_fraction=args.missing_fraction,
             score_transform=args.mnar_score_transform,
         )
-    else:
+    elif args.mask == "coordinate_mar":
         mask_generator = CoordinateMARMask(
             missing_fraction=args.missing_fraction,
             mode=args.mar_mode,
             floor=args.mar_floor,
             max_probability=args.mar_max_probability,
             middle_width=args.mar_middle_width,
+        )
+    elif args.mask == "lv_time_block_mcar":
+        mask_generator = LotkaVolterraTimeBlockMCARMask(
+            missing_fraction=args.missing_fraction,
+            block_size=args.block_size,
+        )
+    elif args.mask == "lv_time_mar":
+        mask_generator = LotkaVolterraTimeMARMask(
+            missing_fraction=args.missing_fraction,
+            mode=args.mar_mode,
+            floor=args.mar_floor,
+            max_probability=args.mar_max_probability,
+            middle_width=args.mar_middle_width,
+        )
+    else:
+        mask_generator = LotkaVolterraLogTotalMNARMask(
+            missing_fraction=args.missing_fraction,
         )
 
     dataset = generate_dataset(

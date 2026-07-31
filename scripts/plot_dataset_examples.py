@@ -9,6 +9,7 @@ import numpy as np
 
 from gapsbi.diagnostics.plots import (
     plot_dataset_examples,
+    plot_lotka_volterra_dataset_examples,
     plot_spatial_sir_dataset_examples,
     plot_vector_dataset_examples,
 )
@@ -24,6 +25,8 @@ def resolve_plot_type(plot_type: str, metadata: dict) -> str:
     simulator_name = metadata.get("simulator", {}).get("name")
     if task == "spatial_sir" or simulator_name == "spatial_sir":
         return "spatial_sir"
+    if task == "lotka_volterra" or simulator_name == "lotka_volterra":
+        return "lotka_volterra"
     if task in {"glu", "glm"}:
         return "vector"
     return "timeseries"
@@ -40,7 +43,7 @@ def main() -> None:
     parser.add_argument("--show", action="store_true")
     parser.add_argument(
         "--plot-type",
-        choices=["timeseries", "vector", "spatial_sir", "auto"],
+        choices=["timeseries", "vector", "spatial_sir", "lotka_volterra", "auto"],
         default="auto",
     )
     args = parser.parse_args()
@@ -81,6 +84,17 @@ def main() -> None:
             indices=indices,
             output_path=output_path,
             split_name=args.split,
+        )
+    elif resolved_plot_type == "lotka_volterra":
+        simulator_metadata = metadata.get("simulator", {})
+        timepoints = simulator_metadata.get("timepoints")
+        plot_lotka_volterra_dataset_examples(
+            split,
+            indices=indices,
+            output_path=output_path,
+            split_name=args.split,
+            timepoints=None if timepoints is None else np.asarray(timepoints, dtype=float),
+            log_y=True,
         )
     else:
         plot_dataset_examples(
