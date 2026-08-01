@@ -27,6 +27,31 @@ from gapsbi.simulators import (
 )
 
 
+def default_output_path(args: argparse.Namespace) -> Path:
+    eps = int(round(100 * args.missing_fraction))
+    task = args.task
+    stem_task = "glm_raw" if task == "glm" and args.summary == "raw" else task
+    family, mask_stem = mask_path_components(args)
+    filename = f"{stem_task}_{mask_stem}_eps{eps:03d}_seed{args.seed}.h5"
+    return Path("data") / "canonical_v1" / task / family / filename
+
+
+def mask_path_components(args: argparse.Namespace) -> tuple[str, str]:
+    if args.mask == "point_mcar":
+        return "mcar", "mcar"
+    if args.mask == "block_mcar":
+        return "mcar", "block_mcar"
+    if args.mask == "coordinate_mar":
+        return "mar", f"mar_coordinate_{args.mar_mode}"
+    if args.mask == "lv_time_block_mcar":
+        return "mcar", "time_block_mcar"
+    if args.mask == "lv_time_mar":
+        return "mar", f"time_mar_{args.mar_mode}"
+    if args.mask == "self_censoring_mnar":
+        return "mnar", f"mnar_self_censoring_{args.mnar_score_transform}"
+    return "mnar", "log_total_mnar"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
     parser.add_argument(
@@ -86,7 +111,11 @@ def main() -> None:
     parser.add_argument("--n-val", type=int, default=200)
     parser.add_argument("--n-test", type=int, default=200)
     parser.add_argument("--seed", type=int, default=123)
-    parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output HDF5 path. Defaults to data/canonical_v1/<task>/<mask_family>/...",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--progress", dest="progress", action="store_true", default=True)
     parser.add_argument("--no-progress", dest="progress", action="store_false")
@@ -180,7 +209,7 @@ def main() -> None:
         "seed": args.seed,
     }
 
-    output_path = Path(args.output)
+    output_path = Path(args.output) if args.output is not None else default_output_path(args)
     save_gapsbi_hdf5(output_path, dataset, metadata=metadata, overwrite=args.overwrite)
 
     print(f"Saved: {output_path}")

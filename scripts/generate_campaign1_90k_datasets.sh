@@ -61,10 +61,17 @@ run_cmd python scripts/generate_dataset.py --task ricker --mask point_mcar --mis
 run_cmd python scripts/generate_dataset.py --task ricker --mask coordinate_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/ricker/mar/ricker_mar_coordinate_increasing_eps${EPS}_seed123.h5" --overwrite
 
 run_cmd python scripts/generate_dataset.py --task ricker --mask self_censoring_mnar --mnar-score-transform log1p --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/ricker/mnar/ricker_mnar_self_censoring_log1p_eps${EPS}_seed123.h5" --overwrite
+
+# Lotka-Volterra
+
+run_cmd python scripts/generate_dataset.py --task lotka_volterra --mask lv_time_block_mcar --missing-fraction "$FRAC" --block-size 5 --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/lotka_volterra/mcar/lotka_volterra_time_block_mcar_eps${EPS}_seed123.h5" --overwrite
+
+run_cmd python scripts/generate_dataset.py --task lotka_volterra --mask lv_time_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/lotka_volterra/mar/lotka_volterra_time_mar_increasing_eps${EPS}_seed123.h5" --overwrite
+
+run_cmd python scripts/generate_dataset.py --task lotka_volterra --mask lv_log_total_mnar --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/lotka_volterra/mnar/lotka_volterra_log_total_mnar_eps${EPS}_seed123.h5" --overwrite
 done
 
 echo
 echo "============================================================"
 echo "Finished at $(date)"
 echo "============================================================"
-

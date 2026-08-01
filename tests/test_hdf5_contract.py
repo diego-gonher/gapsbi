@@ -1,3 +1,5 @@
+import argparse
+import importlib.util
 import os
 import subprocess
 import sys
@@ -11,6 +13,16 @@ from gapsbi.io import load_gapsbi_hdf5, save_gapsbi_hdf5, validate_gapsbi_datase
 from gapsbi.masks import BlockMCARMask, PointMCARMask
 from gapsbi.rng import make_rng
 from gapsbi.simulators import RickerSimulator
+
+
+def load_generate_dataset_script_module():
+    script_path = Path(__file__).parents[1] / "scripts" / "generate_dataset.py"
+    spec = importlib.util.spec_from_file_location("generate_dataset_script", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_generate_split_shapes() -> None:
@@ -44,6 +56,41 @@ def test_generate_dataset_splits() -> None:
     assert dataset["val"]["theta"].shape == (3, 2)
     assert dataset["test"]["theta"].shape == (2, 2)
     validate_gapsbi_dataset(dataset)
+
+
+def test_generate_dataset_default_output_path_uses_canonical_v1() -> None:
+    module = load_generate_dataset_script_module()
+    args = argparse.Namespace(
+        task="lotka_volterra",
+        mask="lv_log_total_mnar",
+        missing_fraction=0.25,
+        summary="raw",
+        mar_mode="increasing",
+        mnar_score_transform="identity",
+        seed=123,
+    )
+
+    assert module.default_output_path(args) == Path(
+        "data/canonical_v1/lotka_volterra/mnar/"
+        "lotka_volterra_log_total_mnar_eps025_seed123.h5"
+    )
+
+
+def test_generate_dataset_default_output_path_matches_existing_glm_style() -> None:
+    module = load_generate_dataset_script_module()
+    args = argparse.Namespace(
+        task="glm",
+        mask="coordinate_mar",
+        missing_fraction=0.1,
+        summary="raw",
+        mar_mode="increasing",
+        mnar_score_transform="identity",
+        seed=123,
+    )
+
+    assert module.default_output_path(args) == Path(
+        "data/canonical_v1/glm/mar/glm_raw_mar_coordinate_increasing_eps010_seed123.h5"
+    )
 
 
 def test_save_load_roundtrip(tmp_path) -> None:
