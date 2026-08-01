@@ -7,6 +7,12 @@ This experiment family contains two lightweight mask-aware NPE baselines:
 
 Both methods keep the posterior estimator as NSF-NPE. They are intended as constrained, Simformer-inspired NPE baselines rather than full transformer-diffusion SBI methods.
 
+Canonical preprocessing matches the other NPE baselines:
+
+- `theta` uses train-only `StandardScaler` for GLM/Lotka-Volterra and train-only `MinMaxScaler(feature_range=(-1, 1))` for bounded-prior tasks.
+- `x` uses train-only `StandardScaler` for GLM/GLU/OUP/Lotka-Volterra; legacy Ricker uses `log1p + StandardScaler`.
+- The scaled-space NPE prior is Gaussian with empirical train covariance for GLM/Lotka-Volterra and `BoxUniform([-1, 1]^d)` for bounded-prior tasks.
+
 Default embedding settings are intentionally small:
 
 ```yaml

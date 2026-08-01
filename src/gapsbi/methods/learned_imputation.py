@@ -15,8 +15,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from gapsbi.methods.sbi_npe import FixedSplitNPE_C
 from gapsbi.preprocessing.scalers import (
     fit_x_scaler_on_full_train,
+    infer_theta_transform,
     infer_x_transform,
     scale_theta_train_val_test,
+    theta_scaling_metadata,
     transform_x_obs_with_fitted_scaler,
 )
 
@@ -97,7 +99,7 @@ def build_imputer(problem: str, x_dim: int, config: dict[str, Any]) -> nn.Module
     dropout = float(config.get("dropout", 0.0))
 
     if imputer_type == "auto":
-        resolved = "cnn" if problem in {"oup", "ricker"} else "mlp"
+        resolved = "cnn" if problem in {"oup", "lotka_volterra", "ricker"} else "mlp"
     else:
         resolved = imputer_type
 
@@ -142,10 +144,12 @@ def prepare_learned_imputation_arrays(
     mask_val_np = dataset["val"]["mask"]
     mask_test_np = dataset["test"]["mask"]
 
+    theta_transform = infer_theta_transform(problem)
     theta_train, theta_val, theta_test, theta_scaler = scale_theta_train_val_test(
         theta_train=theta_train_np,
         theta_val=theta_val_np,
         theta_test=theta_test_np,
+        transform=theta_transform,
     )
 
     x_transform = infer_x_transform(problem)
@@ -202,6 +206,8 @@ def prepare_learned_imputation_arrays(
         "mask_val": torch.tensor(mask_val_np, dtype=torch.float32),
         "mask_test": torch.tensor(mask_test_np, dtype=torch.float32),
         "theta_scaler": theta_scaler,
+        "theta_transform": theta_transform,
+        "theta_scaling_metadata": theta_scaling_metadata(theta_transform),
         "x_scaler": x_scaler,
         "x_transform": x_transform,
         "x_scaling_metadata": x_scaling_metadata,
@@ -514,4 +520,3 @@ def parse_missingness_and_epsilon(dataset_path: str | Path) -> tuple[str, str]:
     match = re.search(r"eps(\d{3})", path)
     epsilon = match.group(1) if match else "unknown"
     return mechanism, epsilon
-

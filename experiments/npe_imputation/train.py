@@ -15,7 +15,6 @@ import yaml
 from sbi.analysis import plot_summary
 from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
-from sbi.utils import BoxUniform
 
 from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
 from gapsbi.datasets import apply_train_val_sample_limits
@@ -30,9 +29,12 @@ from gapsbi.methods.imputation import (
 )
 from gapsbi.methods.sbi_npe import FixedSplitNPE_C
 from gapsbi.preprocessing.scalers import (
+    infer_theta_transform,
     infer_x_transform,
+    make_scaled_theta_prior,
     scale_theta_train_val_test,
     scale_x_obs_train_val_test_from_full_train,
+    theta_scaling_metadata,
 )
 from gapsbi.utils.seeding import set_all_seeds
 
@@ -65,7 +67,7 @@ def infer_problem_name(config_problem: str | None, dataset_path: Path) -> str:
         return str(config_problem).lower()
 
     path_lower = str(dataset_path).lower()
-    for candidate in ("ricker", "glm", "glu", "oup"):
+    for candidate in ("lotka_volterra", "ricker", "glm", "glu", "oup"):
         if candidate in path_lower:
             return candidate
 
@@ -197,11 +199,14 @@ def main() -> None:
     mask_val_np = dataset["val"]["mask"]
     mask_test_np = dataset["test"]["mask"]
 
+    theta_transform = infer_theta_transform(problem)
     theta_train, theta_val, theta_test, theta_scaler = scale_theta_train_val_test(
         theta_train=theta_train_np,
         theta_val=theta_val_np,
         theta_test=theta_test_np,
+        transform=theta_transform,
     )
+    theta_scaling_metadata_dict = theta_scaling_metadata(theta_transform)
 
     x_transform = infer_x_transform(problem)
     x_obs_train_scaled, x_obs_val_scaled, x_obs_test_scaled, x_scaler, x_scaling_metadata = (
@@ -251,7 +256,7 @@ def main() -> None:
     num_train_examples = theta_train.shape[0]
     num_val_examples = theta_val.shape[0]
     num_test_examples = theta_test.shape[0]
-    prior = BoxUniform(low=-torch.ones(theta_dim), high=torch.ones(theta_dim))
+    prior = make_scaled_theta_prior(problem, theta_dim, theta_train_scaled=theta_train)
 
     test_sample = int(eval_cfg["test_sample"])
     num_posterior_samples = int(eval_cfg["num_posterior_samples"])
@@ -308,6 +313,7 @@ def main() -> None:
             config=config,
             dataset_path=dataset_path,
             theta_scaler=theta_scaler,
+            theta_scaling_metadata=theta_scaling_metadata_dict,
             x_scaler=x_scaler,
             x_scaling_metadata=x_scaling_metadata,
             theta_dim=theta_dim,
@@ -376,6 +382,7 @@ def main() -> None:
             f.attrs["num_eval"] = int(num_eval)
             f.attrs["num_posterior_samples"] = int(num_samples)
             f.attrs["theta_dim"] = int(theta_dim_local)
+            f.attrs["theta_transform"] = theta_scaling_metadata_dict["transform"]
             f.attrs["x_transform"] = x_scaling_metadata["transform"]
 
         # Time diagnostics: TARP/SBC computations and diagnostic artifacts.
@@ -436,6 +443,7 @@ def main() -> None:
             "problem": problem,
             "method": method_name,
             "dataset_path": str(dataset_path),
+            "theta_transform": theta_scaling_metadata_dict["transform"],
             "x_transform": x_scaling_metadata["transform"],
             "training_time_sec": float(training_time_sec),
             "posterior_sampling_time_sec": float(posterior_sampling_time_sec),

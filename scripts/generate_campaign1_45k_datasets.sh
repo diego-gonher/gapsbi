@@ -36,19 +36,14 @@ for EPS in 010 025 050; do
   run_cmd python scripts/generate_dataset.py --task glu --dim 10 --simulator-scale 0.1 --mask self_censoring_mnar --mnar-score-transform identity --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glu/mnar/glu_mnar_self_censoring_identity_eps${EPS}_seed123.h5" --overwrite
 
   # GLM
-  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --prior-bound 2.0 --duration 100 --mask point_mcar --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mcar/glm_raw_mcar_eps${EPS}_seed123.h5" --overwrite
-  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --prior-bound 2.0 --duration 100 --mask coordinate_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mar/glm_raw_mar_coordinate_increasing_eps${EPS}_seed123.h5" --overwrite
-  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --prior-bound 2.0 --duration 100 --mask self_censoring_mnar --mnar-score-transform identity --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mnar/glm_raw_mnar_self_censoring_identity_eps${EPS}_seed123.h5" --overwrite
+  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --duration 100 --mask point_mcar --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mcar/glm_raw_mcar_eps${EPS}_seed123.h5" --overwrite
+  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --duration 100 --mask coordinate_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mar/glm_raw_mar_coordinate_increasing_eps${EPS}_seed123.h5" --overwrite
+  run_cmd python scripts/generate_dataset.py --task glm --summary raw --dim 10 --duration 100 --mask self_censoring_mnar --mnar-score-transform identity --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/glm/mnar/glm_raw_mnar_self_censoring_identity_eps${EPS}_seed123.h5" --overwrite
 
   # OUP
   run_cmd python scripts/generate_dataset.py --task oup --mask point_mcar --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/oup/mcar/oup_mcar_eps${EPS}_seed123.h5" --overwrite
   run_cmd python scripts/generate_dataset.py --task oup --mask coordinate_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/oup/mar/oup_mar_coordinate_increasing_eps${EPS}_seed123.h5" --overwrite
   run_cmd python scripts/generate_dataset.py --task oup --mask self_censoring_mnar --mnar-score-transform identity --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/oup/mnar/oup_mnar_self_censoring_identity_eps${EPS}_seed123.h5" --overwrite
-
-  # Ricker
-  run_cmd python scripts/generate_dataset.py --task ricker --mask point_mcar --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/ricker/mcar/ricker_mcar_eps${EPS}_seed123.h5" --overwrite
-  run_cmd python scripts/generate_dataset.py --task ricker --mask coordinate_mar --mar-mode increasing --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/ricker/mar/ricker_mar_coordinate_increasing_eps${EPS}_seed123.h5" --overwrite
-  run_cmd python scripts/generate_dataset.py --task ricker --mask self_censoring_mnar --mnar-score-transform log1p --missing-fraction "$FRAC" --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/ricker/mnar/ricker_mnar_self_censoring_log1p_eps${EPS}_seed123.h5" --overwrite
 
   # Lotka-Volterra
   run_cmd python scripts/generate_dataset.py --task lotka_volterra --mask lv_time_block_mcar --missing-fraction "$FRAC" --block-size 5 --n-train "$N_TRAIN" --n-val "$N_VAL" --n-test "$N_TEST" --seed "$SEED" --output "data/canonical_v1/lotka_volterra/mcar/lotka_volterra_time_block_mcar_eps${EPS}_seed123.h5" --overwrite

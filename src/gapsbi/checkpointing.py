@@ -6,7 +6,7 @@ from typing import Any
 import torch
 
 
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 DEFAULT_CHECKPOINT_NAME = "model_checkpoint.pt"
 
 
@@ -19,6 +19,7 @@ def save_model_checkpoint(
     config: dict[str, Any],
     dataset_path: Path,
     theta_scaler: Any,
+    theta_scaling_metadata: dict[str, Any],
     x_scaler: Any,
     x_scaling_metadata: dict[str, Any],
     theta_dim: int,
@@ -35,6 +36,7 @@ def save_model_checkpoint(
         "config": config,
         "dataset_path": str(dataset_path),
         "theta_scaler": theta_scaler,
+        "theta_scaling_metadata": theta_scaling_metadata,
         "x_scaler": x_scaler,
         "x_scaling_metadata": x_scaling_metadata,
         "theta_dim": int(theta_dim),

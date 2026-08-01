@@ -7,7 +7,7 @@ from gapsbi.simulators.base import Simulator
 
 
 class OUPSimulator(Simulator):
-    """Ornstein-Uhlenbeck process simulator from the RISE benchmark."""
+    """Ornstein-Uhlenbeck process simulator based on the RISE benchmark."""
 
     def __init__(
         self,
@@ -28,7 +28,7 @@ class OUPSimulator(Simulator):
             else np.asarray(prior_low, dtype=float)
         )
         self.prior_high = (
-            np.array([2.0, 2.0], dtype=float)
+            np.array([2.0, 3.0], dtype=float)
             if prior_high is None
             else np.asarray(prior_high, dtype=float)
         )

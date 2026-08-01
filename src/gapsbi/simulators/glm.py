@@ -12,29 +12,33 @@ class GLMSimulator(Simulator):
     def __init__(
         self,
         dim: int = 10,
-        prior_bound: float = 2.0,
+        prior_bound: float | None = None,
         duration: int = 100,
         stimulus_seed: int = 42,
         summary: str = "sufficient",
     ) -> None:
         self.dim = int(dim)
-        self.prior_bound = float(prior_bound)
+        self.prior_bound = None if prior_bound is None else float(prior_bound)
         self.duration = int(duration)
         self.stimulus_seed = int(stimulus_seed)
         self.summary = summary
 
-        if self.dim <= 0:
-            raise ValueError("dim must be positive")
-        if self.prior_bound <= 0:
-            raise ValueError("prior_bound must be positive")
+        if self.dim <= 1:
+            raise ValueError("dim must be at least 2 for the SBIBM Bernoulli GLM prior")
         if self.duration <= 0:
             raise ValueError("duration must be positive")
         if self.summary not in {"sufficient", "raw"}:
             raise ValueError("summary must be 'sufficient' or 'raw'")
 
-        self.prior_low = np.full(self.dim, -self.prior_bound, dtype=float)
-        self.prior_high = np.full(self.dim, self.prior_bound, dtype=float)
-        self.stimulus_I = np.random.default_rng(self.stimulus_seed).normal(size=self.duration)
+        (
+            self.prior_mean,
+            self.prior_covariance,
+            self.prior_precision,
+            self.prior_cholesky,
+            self.prior_log_det_covariance,
+            self.prior_weight_precision_factor,
+        ) = self._build_sbibm_prior(self.dim)
+        self.stimulus_I = np.random.RandomState(self.stimulus_seed).randn(self.duration)
         self.design_matrix = self._build_design_matrix()
 
     @property
@@ -54,7 +58,29 @@ class GLMSimulator(Simulator):
     def sample_theta(self, n: int, rng: np.random.Generator) -> np.ndarray:
         if n < 0:
             raise ValueError("n must be nonnegative")
-        return rng.uniform(self.prior_low, self.prior_high, size=(n, self.theta_dim))
+        return rng.multivariate_normal(
+            mean=self.prior_mean,
+            cov=self.prior_covariance,
+            size=n,
+        )
+
+    def log_prior(self, theta: np.ndarray) -> np.ndarray:
+        theta_array = np.asarray(theta, dtype=float)
+        single = theta_array.ndim == 1
+        if single:
+            theta_array = theta_array[None, :]
+        if theta_array.ndim != 2 or theta_array.shape[1] != self.theta_dim:
+            raise ValueError(
+                f"theta must have shape ({self.theta_dim},) or (batch, {self.theta_dim})"
+            )
+        centered = theta_array - self.prior_mean
+        quadratic = np.einsum("bi,ij,bj->b", centered, self.prior_precision, centered)
+        log_prob = -0.5 * (
+            self.theta_dim * np.log(2.0 * np.pi)
+            + self.prior_log_det_covariance
+            + quadratic
+        )
+        return log_prob[0] if single else log_prob
 
     def simulate(self, theta: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         theta_array = np.asarray(theta, dtype=float)
@@ -90,12 +116,42 @@ class GLMSimulator(Simulator):
             "x_shape": self.x_shape,
             "dim": self.dim,
             "duration": self.duration,
-            "prior_bound": self.prior_bound,
-            "prior_low": self.prior_low.tolist(),
-            "prior_high": self.prior_high.tolist(),
+            "prior_type": "sbibm_bernoulli_glm_gaussian",
+            "prior_mean": self.prior_mean.tolist(),
+            "prior_covariance": self.prior_covariance.tolist(),
+            "prior_precision": self.prior_precision.tolist(),
+            "prior_weight_precision_factor": self.prior_weight_precision_factor.tolist(),
+            "prior_beta_precision": 0.5,
             "stimulus_seed": self.stimulus_seed,
+            "stimulus_rng": "numpy_randomstate_randn",
             "summary": self.summary,
         }
+
+    @staticmethod
+    def _build_sbibm_prior(
+        dim: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, np.ndarray]:
+        num_weights = dim - 1
+        factor = np.zeros((num_weights, num_weights), dtype=float)
+        for i in range(num_weights):
+            factor[i, i] = 1.0 + np.sqrt(i / num_weights)
+            if i >= 1:
+                factor[i, i - 1] = -2.0
+            if i >= 2:
+                factor[i, i - 2] = 1.0
+        weight_precision = factor.T @ factor
+        weight_covariance = np.linalg.inv(weight_precision)
+
+        mean = np.zeros(dim, dtype=float)
+        covariance = np.zeros((dim, dim), dtype=float)
+        covariance[0, 0] = 2.0
+        covariance[1:, 1:] = weight_covariance
+        precision = np.linalg.inv(covariance)
+        cholesky = np.linalg.cholesky(covariance)
+        sign, log_det = np.linalg.slogdet(covariance)
+        if sign <= 0:
+            raise FloatingPointError("GLM prior covariance must be positive definite")
+        return mean, covariance, precision, cholesky, float(log_det), factor
 
     def _build_design_matrix(self) -> np.ndarray:
         design_matrix = np.zeros((self.duration, self.dim), dtype=float)

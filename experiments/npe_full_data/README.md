@@ -9,11 +9,11 @@ using reusable package utilities under `src/gapsbi`.
 - Uses `x_full` only (not `x_obs` or `mask`).
 - Uses predefined train/val/test splits from the dataset.
 - Scales:
-  - `theta` with `MinMaxScaler(feature_range=(-1, 1))` fit on train.
+  - `theta` with `StandardScaler` for GLM/Lotka-Volterra and `MinMaxScaler(feature_range=(-1, 1))` for bounded-prior tasks, fit on train.
   - `x` with:
-    - `log1p + StandardScaler` for Ricker.
-    - `StandardScaler` for GLM/GLU/OUP.
-- Builds a scaled-space `BoxUniform([-1, 1]^d)` prior.
+    - `StandardScaler` for GLM/GLU/OUP/Lotka-Volterra.
+    - `log1p + StandardScaler` only for legacy Ricker.
+- Builds a scaled-space Gaussian prior with empirical train covariance for GLM/Lotka-Volterra and `BoxUniform([-1, 1]^d)` for bounded-prior tasks.
 - Runs NPE training/evaluation for each configured seed.
 - Saves posterior samples, TARP/SBC diagnostics, and summary JSONs.
 

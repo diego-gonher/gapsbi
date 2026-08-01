@@ -14,7 +14,6 @@ import torch
 import yaml
 from sbi.analysis.plot import sbc_rank_plot
 from sbi.diagnostics import check_tarp
-from sbi.utils import BoxUniform
 
 from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
 from gapsbi.datasets import apply_train_val_sample_limits
@@ -27,6 +26,7 @@ from gapsbi.methods.learned_imputation import (
     prepare_learned_imputation_arrays,
 )
 from gapsbi.methods.rise import train_rise_npe
+from gapsbi.preprocessing.scalers import make_scaled_theta_prior
 from gapsbi.utils.seeding import set_all_seeds
 
 matplotlib.use("Agg")
@@ -58,7 +58,7 @@ def infer_problem_name(config_problem: str | None, dataset_path: Path) -> str:
         return str(config_problem).lower()
 
     path_lower = str(dataset_path).lower()
-    for candidate in ("ricker", "glm", "glu", "oup"):
+    for candidate in ("lotka_volterra", "ricker", "glm", "glu", "oup"):
         if candidate in path_lower:
             return candidate
 
@@ -249,12 +249,13 @@ def main() -> None:
     mask_val = prepared["mask_val"]
     mask_test = prepared["mask_test"]
     theta_scaler = prepared["theta_scaler"]
+    theta_scaling_metadata = prepared["theta_scaling_metadata"]
     x_scaler = prepared["x_scaler"]
     x_scaling_metadata = prepared["x_scaling_metadata"]
 
     theta_dim = theta_train.shape[1]
     x_dim = x_obs_train_scaled.shape[1]
-    prior = BoxUniform(low=-torch.ones(theta_dim), high=torch.ones(theta_dim))
+    prior = make_scaled_theta_prior(problem, theta_dim, theta_train_scaled=theta_train)
 
     test_sample = int(eval_cfg["test_sample"])
     num_posterior_samples = int(eval_cfg["num_posterior_samples"])
@@ -318,6 +319,7 @@ def main() -> None:
                 config=config,
                 dataset_path=dataset_path,
                 theta_scaler=theta_scaler,
+                theta_scaling_metadata=theta_scaling_metadata,
                 x_scaler=x_scaler,
                 x_scaling_metadata=x_scaling_metadata,
                 theta_dim=theta_dim,
@@ -401,6 +403,7 @@ def main() -> None:
                 f.attrs["num_eval"] = int(num_eval)
                 f.attrs["num_posterior_samples"] = int(num_samples)
                 f.attrs["theta_dim"] = int(theta_dim_local)
+                f.attrs["theta_transform"] = theta_scaling_metadata["transform"]
                 f.attrs["x_transform"] = x_scaling_metadata["transform"]
 
             diagnostics_start = time.perf_counter()
@@ -465,6 +468,7 @@ def main() -> None:
                 "method": method_metadata,
                 "method_name": "npe_rise",
                 "dataset_path": str(dataset_path),
+                "theta_transform": theta_scaling_metadata["transform"],
                 "x_transform": x_scaling_metadata["transform"],
                 "x_dim": int(x_dim),
                 "theta_dim": int(theta_dim),
@@ -518,6 +522,8 @@ def main() -> None:
                 "method": method_metadata,
                 "method_name": "npe_rise",
                 "dataset_path": str(dataset_path),
+                "theta_transform": theta_scaling_metadata["transform"],
+                "x_transform": x_scaling_metadata["transform"],
                 "max_train_samples": max_train_samples,
                 "max_val_samples": max_val_samples,
                 "density_estimator": str(npe_cfg.get("density_estimator", "nsf")),

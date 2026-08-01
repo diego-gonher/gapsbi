@@ -305,9 +305,8 @@ def test_generate_glm_reference_posteriors_contract_short_mcmc() -> None:
     assert reference_data["acceptance_fraction"].shape == (1,)
     assert reference_data["split_rhat"].shape == (1, 3)
     assert reference_data["mcmc_trace"].shape == (1, 6, 3, 3)
-    assert reference_data["num_prior_bound_violations"] == 0
-    assert np.all(theta_samples >= -2.0)
-    assert np.all(theta_samples <= 2.0)
+    assert reference_data["num_nonfinite_prior_log_prob"] == 0
+    assert np.all(np.isfinite(theta_samples))
 
 
 def test_plot_reference_mcmc_traces_saves_when_available(tmp_path: Path) -> None:

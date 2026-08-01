@@ -93,6 +93,16 @@ def test_generate_dataset_default_output_path_matches_existing_glm_style() -> No
     )
 
 
+def test_lotka_volterra_dataset_generation_rejects_generic_masks() -> None:
+    module = load_generate_dataset_script_module()
+
+    module.validate_task_mask_compatibility("lotka_volterra", "lv_time_mar")
+    with pytest.raises(ValueError, match="timestamp-level two-population masks"):
+        module.validate_task_mask_compatibility("lotka_volterra", "coordinate_mar")
+    with pytest.raises(ValueError, match="only valid"):
+        module.validate_task_mask_compatibility("oup", "lv_time_mar")
+
+
 def test_save_load_roundtrip(tmp_path) -> None:
     simulator = RickerSimulator(T=12)
     mask_generator = PointMCARMask(missing_fraction=0.25)

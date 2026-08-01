@@ -103,6 +103,7 @@ def main() -> None:
                 None if args.skip_spotcheck else args.spotcheck_grid_resolution
             ),
             spotcheck_observation_indices=spotcheck_observation_indices,
+            progress=args.progress,
         )
     elif args.problem == "glm":
         validation_observation_indices = (
@@ -116,7 +117,7 @@ def main() -> None:
             observation_seed=args.observation_seed,
             posterior_seed=args.posterior_seed,
             dim=args.dim,
-            prior_bound=2.0 if args.prior_bound is None else args.prior_bound,
+            prior_bound=args.prior_bound,
             duration=args.duration,
             stimulus_seed=args.stimulus_seed,
             num_walkers=args.num_walkers,
@@ -127,6 +128,7 @@ def main() -> None:
             trace_num_walkers=args.trace_num_walkers,
             validation_num_ensembles=args.validation_num_ensembles,
             validation_observation_indices=validation_observation_indices,
+            progress=args.progress,
         )
     elif args.problem == "lotka_volterra":
         validation_observation_indices = (

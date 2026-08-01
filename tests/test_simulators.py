@@ -238,12 +238,19 @@ def test_glm_sample_theta_shape() -> None:
     assert theta.shape == (7, 6)
 
 
-def test_glm_sample_theta_within_prior_bounds() -> None:
-    simulator = GLMSimulator(dim=6, prior_bound=3.0)
-    theta = simulator.sample_theta(100, np.random.default_rng(123))
+def test_glm_sample_theta_uses_sbibm_gaussian_prior() -> None:
+    simulator = GLMSimulator(dim=10)
+    theta = simulator.sample_theta(5_000, np.random.default_rng(123))
 
-    assert np.all(theta >= -3.0)
-    assert np.all(theta <= 3.0)
+    assert np.all(np.isfinite(theta))
+    assert simulator.metadata()["prior_type"] == "sbibm_bernoulli_glm_gaussian"
+    np.testing.assert_allclose(theta.mean(axis=0), simulator.prior_mean, atol=0.15)
+    np.testing.assert_allclose(np.var(theta[:, 0]), 2.0, rtol=0.1)
+    np.testing.assert_allclose(
+        np.cov(theta[:, 1:], rowvar=False),
+        simulator.prior_covariance[1:, 1:],
+        atol=0.2,
+    )
 
 
 def test_glm_simulate_single_theta_shape_for_summary_mode() -> None:
@@ -269,6 +276,18 @@ def test_glm_raw_mode_returns_binary_output() -> None:
 
     assert x.shape == (20,)
     assert np.all((x == 0) | (x == 1))
+
+
+def test_glm_stimulus_and_design_matrix_match_sbibm_construction() -> None:
+    simulator = GLMSimulator(dim=10, duration=100, stimulus_seed=42)
+    stimulus = np.random.RandomState(42).randn(100)
+    expected_design = np.zeros((100, 10), dtype=float)
+    expected_design[:, 0] = 1.0
+    for j in range(9):
+        expected_design[j:, j + 1] = stimulus[: 100 - j]
+
+    np.testing.assert_allclose(simulator.stimulus_I, stimulus)
+    np.testing.assert_allclose(simulator.design_matrix, expected_design)
 
 
 def test_glm_same_seed_produces_identical_samples() -> None:

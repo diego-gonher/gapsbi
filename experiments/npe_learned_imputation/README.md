@@ -25,8 +25,8 @@ Where `recon_loss` is MSE restricted to missing entries only.
 ## Imputer type
 
 - `auto` selects:
-  - `cnn` for `oup`, `ricker`
-  - `mlp` for `glm`, `glu`
+  - `cnn` for time-series tasks such as `oup`, `lotka_volterra`, and legacy `ricker`
+  - `mlp` for vector tasks such as `glm`, `glu`
 - You can force `mlp` or `cnn` in config.
 
 ## Run

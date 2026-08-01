@@ -4,7 +4,10 @@ import argparse
 from pathlib import Path
 
 from gapsbi.references import (
+    plot_glm_reference_predictives,
+    plot_glu_reference_predictives,
     plot_lotka_volterra_reference_predictives,
+    plot_oup_reference_predictives,
     plot_reference_mcmc_traces,
     plot_reference_posterior_marginals,
     plot_reference_posterior_pairs,
@@ -50,6 +53,30 @@ def main() -> None:
         )
     paths.extend(
         plot_lotka_volterra_reference_predictives(
+            args.reference_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            seed=args.seed,
+        )
+    )
+    paths.extend(
+        plot_oup_reference_predictives(
+            args.reference_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            seed=args.seed,
+        )
+    )
+    paths.extend(
+        plot_glm_reference_predictives(
+            args.reference_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            seed=args.seed,
+        )
+    )
+    paths.extend(
+        plot_glu_reference_predictives(
             args.reference_path,
             output_dir=args.output_dir,
             max_samples=args.max_samples,

@@ -16,10 +16,10 @@ Method recorded in outputs:
 ## Canonical preprocessing
 
 1. Load `theta`, `x_full`, `x_obs`, `mask` for train/val/test.
-2. Scale `theta` with train-only `MinMaxScaler(-1, 1)`.
+2. Scale `theta` with train-only `StandardScaler` for GLM/Lotka-Volterra and `MinMaxScaler(-1, 1)` for bounded-prior tasks.
 3. Fit x scaler on `x_full_train` only:
-   - GLM/GLU/OUP: `StandardScaler`
-   - Ricker: `log1p + StandardScaler`
+   - GLM/GLU/OUP/Lotka-Volterra: `StandardScaler`
+   - legacy Ricker: `log1p + StandardScaler`
 4. Transform `x_obs` using that fitted scaler.
 5. Zero-impute missing entries in scaled space.
 6. Concatenate `[x_imputed, mask.float()]` along feature axis.

@@ -84,13 +84,14 @@ class LotkaVolterraTimeBlockMCARMask(LotkaVolterraTimeMaskMixin, MaskGenerator):
         if target_missing >= num_timepoints:
             return np.zeros(num_timepoints, dtype=np.int8)
 
-        max_start = max(num_timepoints - self.block_size, 0)
         missing_count = 0
         stall_count = 0
         while missing_count < target_missing:
             previous_missing_count = missing_count
+            block_length = min(self.block_size, target_missing - missing_count)
+            max_start = max(num_timepoints - block_length, 0)
             start = int(rng.integers(0, max_start + 1))
-            end = min(start + self.block_size, num_timepoints)
+            end = min(start + block_length, num_timepoints)
             mask[start:end] = 0
             missing_count = int(np.sum(mask == 0))
             if missing_count == previous_missing_count:
@@ -101,8 +102,10 @@ class LotkaVolterraTimeBlockMCARMask(LotkaVolterraTimeMaskMixin, MaskGenerator):
                 observed = np.flatnonzero(mask == 1)
                 if observed.size == 0:
                     break
+                block_length = min(self.block_size, target_missing - missing_count)
+                max_start = max(num_timepoints - block_length, 0)
                 start = min(max(int(observed[0]), 0), max_start)
-                end = min(start + self.block_size, num_timepoints)
+                end = min(start + block_length, num_timepoints)
                 mask[start:end] = 0
                 missing_count = int(np.sum(mask == 0))
                 stall_count = 0

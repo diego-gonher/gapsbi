@@ -52,6 +52,19 @@ def mask_path_components(args: argparse.Namespace) -> tuple[str, str]:
     return "mnar", "log_total_mnar"
 
 
+def validate_task_mask_compatibility(task: str, mask: str) -> None:
+    lv_masks = {"lv_time_block_mcar", "lv_time_mar", "lv_log_total_mnar"}
+    if task == "lotka_volterra" and mask not in lv_masks:
+        raise ValueError(
+            "Lotka-Volterra uses timestamp-level two-population masks. "
+            f"Use one of {sorted(lv_masks)}, got {mask!r}."
+        )
+    if task != "lotka_volterra" and mask in lv_masks:
+        raise ValueError(
+            f"{mask!r} is only valid for --task lotka_volterra; got task={task!r}."
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
     parser.add_argument(
@@ -92,7 +105,12 @@ def main() -> None:
     parser.add_argument("--mar-max-probability", type=float, default=0.95)
     parser.add_argument("--mar-middle-width", type=float, default=0.2)
     parser.add_argument("--dim", type=int, default=10)
-    parser.add_argument("--prior-bound", type=float, default=2.0)
+    parser.add_argument(
+        "--prior-bound",
+        type=float,
+        default=None,
+        help="Deprecated for GLM; the GLM prior is the SBIBM Gaussian prior.",
+    )
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--summary", choices=["sufficient", "raw"], default="sufficient")
     parser.add_argument("--simulator-scale", type=float, default=0.1)
@@ -120,6 +138,7 @@ def main() -> None:
     parser.add_argument("--progress", dest="progress", action="store_true", default=True)
     parser.add_argument("--no-progress", dest="progress", action="store_false")
     args = parser.parse_args()
+    validate_task_mask_compatibility(args.task, args.mask)
 
     if args.task == "ricker":
         simulator = RickerSimulator()

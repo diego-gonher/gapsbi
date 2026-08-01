@@ -34,7 +34,8 @@ Implemented benchmark tasks:
 - OUP
 - GLM
 - GLU
-- Ricker
+- Lotka-Volterra
+- Ricker (legacy/implemented, not part of the current main four-problem benchmark)
 - Spatial SIR
 - Hodgkin-Huxley
 
@@ -75,7 +76,7 @@ Problems:
 - OUP
 - GLM
 - GLU
-- Ricker
+- Lotka-Volterra
 
 Missingness mechanisms:
 
@@ -109,21 +110,10 @@ Full-budget runs write under `outputs/` unless a config explicitly uses another 
 
 ## Implemented Simulators
 
-### Ricker
-
-`RickerSimulator` implements a RISE-style stochastic Ricker population model.
-
-- `name`: `"ricker"`
-- `theta = [log_r, phi]`
-- `theta_dim = 2`
-- default `x_shape = (100,)`
-- prior:
-  - `log_r ~ Uniform(2, 8)`
-  - `phi ~ Uniform(0, 20)`
-
 ### OUP
 
-`OUPSimulator` implements a RISE-style Ornstein-Uhlenbeck process.
+`OUPSimulator` implements a RISE-style Ornstein-Uhlenbeck process with a
+slightly widened default equilibrium prior.
 
 - `name`: `"oup"`
 - `theta = [theta1, log_theta2]`
@@ -131,7 +121,7 @@ Full-budget runs write under `outputs/` unless a config explicitly uses another 
 - default `x_shape = (25,)`
 - prior:
   - `theta1 ~ Uniform(0, 2)`
-  - `log_theta2 ~ Uniform(-2, 2)`
+  - `log_theta2 ~ Uniform(-2, 3)`
 
 ### GLU
 
@@ -155,7 +145,9 @@ Full-budget runs write under `outputs/` unless a config explicitly uses another 
 - default `dim = 10`
 - default `duration = 100`
 - prior:
-  - `theta_i ~ Uniform(-prior_bound, prior_bound)`
+  - `theta[0] ~ Normal(0, 2)` using variance parameterization
+  - `theta[1:] ~ Normal(0, inv(F.T @ F))`
+  - `F[i, i] = 1 + sqrt(i / 9)`, `F[i, i - 1] = -2`, `F[i, i - 2] = 1` for the default 9 weights where those indices exist
 - summary mode output:
   - `x_shape = (dim,)`
   - first entry is spike count
@@ -163,6 +155,39 @@ Full-budget runs write under `outputs/` unless a config explicitly uses another 
 - raw mode output:
   - `x_shape = (duration,)`
   - binary spike train
+
+### Lotka-Volterra
+
+`LotkaVolterraSimulator` implements a two-population predator-prey ODE benchmark
+with lognormal observation noise and a 1D packed observation vector.
+
+- `name`: `"lotka_volterra"`
+- `theta = [alpha, beta, gamma, delta]`
+- `theta_dim = 4`
+- default `num_timepoints = 50`
+- default `days = 20`
+- default `x_shape = (100,)`
+- observation layout:
+  - `x = [prey_t0, predator_t0, prey_t1, predator_t1, ..., prey_t49, predator_t49]`
+- prior:
+  - `log(theta) ~ Normal([-0.125, -3.0, -0.125, -3.0], 0.5^2 I)`
+- observation model:
+  - deterministic LV trajectory from initial state `[30, 1]`
+  - lognormal observation noise with scale `0.1`
+
+### Ricker
+
+`RickerSimulator` implements a RISE-style stochastic Ricker population model. It
+remains implemented for legacy experiments but is not part of the current main
+four-problem benchmark.
+
+- `name`: `"ricker"`
+- `theta = [log_r, phi]`
+- `theta_dim = 2`
+- default `x_shape = (100,)`
+- prior:
+  - `log_r ~ Uniform(2, 8)`
+  - `phi ~ Uniform(0, 20)`
 
 ### Spatial SIR
 
@@ -212,19 +237,22 @@ Implemented MCAR masks:
 
 - `PointMCARMask`: independent Bernoulli masking at each entry.
 - `BlockMCARMask`: contiguous missing blocks for 1D vectors or batched 1D data.
+- `LotkaVolterraTimeBlockMCARMask`: timestamp-block MCAR masking for LV. Missing timestamps hide both prey and predator entries.
 
 Implemented MAR masks:
 
 - `CoordinateMARMask`: coordinate/time-dependent missingness. It depends only on index metadata along the last axis, not on `x_full` values, so it is MAR rather than MNAR. Modes are `increasing`, `decreasing`, and `middle`. The requested `missing_fraction` is approximately the realized missing fraction before probability clipping; realized missingness can be lower when `max_probability` clips probabilities.
+- `LotkaVolterraTimeMARMask`: timestamp-level LV MAR masking. A single time decision is expanded to both prey and predator entries.
 
 Implemented MNAR masks:
 
 - `SelfCensoringMNARMask`: value-dependent self-censoring. Each sample is optionally transformed, min/max shifted into `[0, 1]`, then higher normalized values receive higher missingness probability. Constant samples use score `0.5` everywhere to avoid division instability.
+- `LotkaVolterraLogTotalMNARMask`: timestamp-level LV MNAR masking based on `log(prey_t + predator_t)`, with the same mask applied to both populations at a timestamp.
 
 `SelfCensoringMNARMask` supports `score_transform`:
 
 - `identity`: score directly from `x_full`
-- `log1p`: score from `np.log1p(x_full)`, useful for nonnegative spiky/count data such as Ricker
+- `log1p`: score from `np.log1p(x_full)`, useful for nonnegative spiky/count data such as legacy Ricker
 - `abs`: score from `np.abs(x_full)`, useful for signed vector data when magnitude should drive missingness
 
 Mask convention:
@@ -277,11 +305,14 @@ Other constants:
 
 - Dataset seed: `123`
 - Missingness levels: `0.10`, `0.25`, `0.50`
-- MCAR: `point_mcar`
-- MAR: `coordinate_mar`, `mar-mode=increasing`
-- MNAR:
-  - `identity` self-censoring for GLU, GLM, OUP
-  - `log1p` self-censoring for Ricker
+- OUP/GLU/GLM masks:
+  - MCAR: `point_mcar`
+  - MAR: `coordinate_mar`, `mar-mode=increasing`
+  - MNAR: `identity` self-censoring
+- Lotka-Volterra masks:
+  - MCAR: `lv_time_block_mcar`, `block-size=5`
+  - MAR: `lv_time_mar`, `mar-mode=increasing`
+  - MNAR: `lv_log_total_mnar`
 
 Generate Campaign 1 canonical datasets with:
 
@@ -305,18 +336,19 @@ Dataset generation shows per-simulation progress bars for each split by default 
 
 Use `--no-progress` to disable progress output, which is useful for tests and scripted runs.
 
-Example Ricker dataset with point MCAR:
+Example Lotka-Volterra dataset with time-block MCAR:
 
 ```bash
 PYTHONPATH=src python scripts/generate_dataset.py \
-  --task ricker \
-  --mask point_mcar \
+  --task lotka_volterra \
+  --mask lv_time_block_mcar \
   --missing-fraction 0.25 \
+  --block-size 5 \
   --n-train 1000 \
   --n-val 200 \
   --n-test 200 \
   --seed 123 \
-  --output data/ricker_mcar_25.h5 \
+  --output data/lotka_volterra_time_block_mcar_25.h5 \
   --overwrite
 ```
 
@@ -340,9 +372,8 @@ Example GLM dataset:
 PYTHONPATH=src python scripts/generate_dataset.py \
   --task glm \
   --dim 10 \
-  --prior-bound 2.0 \
   --duration 100 \
-  --summary sufficient \
+  --summary raw \
   --mask point_mcar \
   --missing-fraction 0.25 \
   --output data/glm_mcar_25.h5 \
@@ -362,15 +393,14 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --overwrite
 ```
 
-Example Ricker dataset with log-compressed MNAR self-censoring:
+Example Lotka-Volterra dataset with log-total MNAR:
 
 ```bash
 PYTHONPATH=src python scripts/generate_dataset.py \
-  --task ricker \
-  --mask self_censoring_mnar \
-  --missing-fraction 1.0 \
-  --mnar-score-transform log1p \
-  --output data/ricker_self_censoring_mnar_log1p.h5 \
+  --task lotka_volterra \
+  --mask lv_log_total_mnar \
+  --missing-fraction 0.25 \
+  --output data/lotka_volterra_log_total_mnar_25.h5 \
   --overwrite
 ```
 
@@ -416,8 +446,8 @@ PYTHONPATH=src python scripts/generate_dataset.py \
 
 Supported generation options:
 
-- `--task {ricker,oup,glu,glm,spatial_sir,hodgkin_huxley}`
-- `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar}`
+- `--task {ricker,oup,glu,glm,spatial_sir,hodgkin_huxley,lotka_volterra}`
+- `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar,lv_time_block_mcar,lv_time_mar,lv_log_total_mnar}`
 - `--missing-fraction`
 - `--block-size`
 - `--mar-mode {increasing,decreasing,middle}`
@@ -437,7 +467,8 @@ Supported generation options:
 Task-specific options:
 
 - GLU: `--dim`, `--simulator-scale`
-- GLM: `--dim`, `--prior-bound`, `--duration`, `--summary {sufficient,raw}`
+- GLM: `--dim`, `--duration`, `--summary {sufficient,raw}`
+- Lotka-Volterra: `--num-timepoints`, `--days`, `--observation-noise-scale`
 - Spatial SIR: `--grid-size`, `--measurement-time`, `--simulation-step-size`, `--initial-infection-rate`
 - Hodgkin-Huxley: `--duration`, `--dt`, `--t-on`, `--curr-level`, `--downsample`
 - MAR masks: `--mar-mode`, `--mar-floor`, `--mar-max-probability`, `--mar-middle-width`
@@ -445,20 +476,27 @@ Task-specific options:
 
 For Spatial SIR, masking is applied at the spatial cell level. A single cell-level mask is expanded across the susceptible, infected, and recovered channels before flattening, so all three state channels for a cell are observed or missing together.
 
+For Lotka-Volterra, masking is applied at the timestamp level. The 1D
+observation vector is interleaved by population within each timestamp, and
+LV-specific masks always observe or hide both prey and predator together.
+
 ## Dataset Diagnostics and Plotting
 
 Plot example observations:
 
 ```bash
 PYTHONPATH=src python scripts/plot_dataset_examples.py \
-  --input data/ricker_mcar_25.h5 \
+  --input data/lotka_volterra_time_block_mcar_25.h5 \
   --split train \
   --num-examples 6 \
   --seed 0 \
-  --output outputs/ricker_examples.png
+  --output outputs/lotka_volterra_examples.png
 ```
 
-The plotting CLI supports `--plot-type auto`, `timeseries`, `vector`, and `spatial_sir`. `auto` chooses spatial plots for Spatial SIR, vector plots for GLU/GLM, and time-series plots otherwise.
+The plotting CLI supports `--plot-type auto`, `timeseries`, `vector`,
+`spatial_sir`, and `lotka_volterra`. `auto` chooses spatial plots for Spatial
+SIR, LV-specific two-population plots for Lotka-Volterra, vector plots for
+GLU/GLM, and time-series plots otherwise.
 
 Run dataset characterization diagnostics:
 
@@ -491,6 +529,12 @@ Common per-seed outputs:
 - `summary.json`
 
 `model_checkpoint.pt` is a lightweight PyTorch checkpoint for the trained per-seed model. It stores the trained density-estimator weights, preprocessing scalers and scaling metadata, run config, dataset path, dimensions, and method-specific extras such as masked-embedding config or learned/RISE imputer weights. It is intended for reconstructing the trained model for later inference without rerunning training.
+
+Theta preprocessing uses train-only `StandardScaler` for GLM and
+Lotka-Volterra, and train-only `MinMaxScaler(feature_range=(-1, 1))` for
+bounded-prior tasks. The scaled-space NPE prior is Gaussian with empirical train
+covariance for GLM/Lotka-Volterra and `BoxUniform([-1, 1]^d)` for bounded-prior
+tasks.
 
 Experiment root output:
 
@@ -717,11 +761,11 @@ PYTHONPATH=src python scripts/compute_full_data_per_observation_seed_moment_shif
 ```python
 from gapsbi.datasets import generate_dataset
 from gapsbi.io import save_gapsbi_hdf5
-from gapsbi.masks import PointMCARMask
-from gapsbi.simulators import RickerSimulator
+from gapsbi.masks import LotkaVolterraTimeBlockMCARMask
+from gapsbi.simulators import LotkaVolterraSimulator
 
-simulator = RickerSimulator()
-mask = PointMCARMask(missing_fraction=0.25)
+simulator = LotkaVolterraSimulator()
+mask = LotkaVolterraTimeBlockMCARMask(missing_fraction=0.25, block_size=5)
 
 dataset = generate_dataset(
     simulator=simulator,
@@ -733,7 +777,7 @@ dataset = generate_dataset(
 )
 
 save_gapsbi_hdf5(
-    "data/ricker_mcar_25.h5",
+    "data/lotka_volterra_time_block_mcar_25.h5",
     dataset,
     metadata={
         "task": simulator.name,

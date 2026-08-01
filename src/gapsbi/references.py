@@ -94,6 +94,7 @@ def generate_oup_reference_posteriors(
     validation_grid_resolutions: tuple[int, ...] = (400,),
     spotcheck_grid_resolution: int | None = 1200,
     spotcheck_observation_indices: tuple[int, ...] = (0, 1),
+    progress: bool = False,
 ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, np.ndarray]]:
     """Generate fixed OUP observations and grid-based reference posteriors."""
     if num_observations <= 0:
@@ -122,6 +123,12 @@ def generate_oup_reference_posteriors(
 
     final_posteriors = []
     for obs_idx in range(num_observations):
+        if progress:
+            print(
+                f"OUP reference {obs_idx + 1}/{num_observations}: "
+                f"computing {grid_resolution} x {grid_resolution} grid",
+                flush=True,
+            )
         posterior = compute_oup_grid_posterior(
             x_full[obs_idx],
             simulator=simulator,
@@ -138,6 +145,13 @@ def generate_oup_reference_posteriors(
         grid_ess[obs_idx] = posterior["ess"]
         grid_boundary_mass[obs_idx] = posterior["boundary_mass"]
         grid_log_normalizer[obs_idx] = posterior["log_normalizer"]
+        if progress:
+            print(
+                f"OUP reference {obs_idx + 1}/{num_observations}: done "
+                f"(boundary_mass={grid_boundary_mass[obs_idx]:.6g}, "
+                f"ess={grid_ess[obs_idx]:.6g})",
+                flush=True,
+            )
 
     diagnostics: dict[str, np.ndarray] = {
         "posterior_sample_mean": theta_samples.mean(axis=1),
@@ -158,6 +172,9 @@ def generate_oup_reference_posteriors(
         ),
     }
     if validation_grid_resolutions:
+        if progress:
+            resolutions = ", ".join(str(value) for value in validation_grid_resolutions)
+            print(f"OUP validation grids: {resolutions}", flush=True)
         diagnostics.update(
             compute_oup_grid_resolution_diagnostics(
                 x_full,
@@ -167,6 +184,12 @@ def generate_oup_reference_posteriors(
             )
         )
     if spotcheck_grid_resolution is not None:
+        if progress:
+            indices = ", ".join(str(value) for value in spotcheck_observation_indices)
+            print(
+                f"OUP spotcheck grid {spotcheck_grid_resolution} for observations: {indices}",
+                flush=True,
+            )
         diagnostics.update(
             compute_oup_grid_resolution_diagnostics(
                 x_full,
@@ -207,7 +230,7 @@ def generate_glm_reference_posteriors(
     observation_seed: int = 12_345,
     posterior_seed: int = 23_456,
     dim: int = 10,
-    prior_bound: float = 2.0,
+    prior_bound: float | None = None,
     duration: int = 100,
     stimulus_seed: int = 42,
     num_walkers: int = 128,
@@ -218,6 +241,7 @@ def generate_glm_reference_posteriors(
     trace_num_walkers: int = 8,
     validation_num_ensembles: int = 2,
     validation_observation_indices: tuple[int, ...] = (0, 1),
+    progress: bool = False,
 ) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, np.ndarray]]:
     """Generate fixed raw-GLM observations and emcee reference posteriors."""
     if num_observations <= 0:
@@ -270,6 +294,11 @@ def generate_glm_reference_posteriors(
     validation_cov_fro_delta = np.full_like(validation_mean_l2_delta, np.nan)
 
     for obs_idx in range(num_observations):
+        if progress:
+            print(
+                f"GLM reference {obs_idx + 1}/{num_observations}: running main ensemble",
+                flush=True,
+            )
         result = run_glm_emcee_reference(
             x_full[obs_idx],
             simulator=simulator,
@@ -298,6 +327,13 @@ def generate_glm_reference_posteriors(
         posterior_sample_std[obs_idx] = theta_samples[obs_idx].std(axis=0)
         trace_idx = np.linspace(0, production_steps - 1, trace_steps, dtype=int)
         mcmc_trace[obs_idx] = result["chain"][trace_idx, :trace_walkers, :]
+        if progress:
+            print(
+                f"GLM reference {obs_idx + 1}/{num_observations}: done "
+                f"(acceptance={acceptance_fraction[obs_idx]:.3f}, "
+                f"max_rhat={np.nanmax(split_rhat[obs_idx]):.3f})",
+                flush=True,
+            )
 
     for local_idx, obs_idx in enumerate(validation_observation_indices):
         if obs_idx < 0 or obs_idx >= num_observations:
@@ -305,6 +341,13 @@ def generate_glm_reference_posteriors(
         reference_mean = posterior_sample_mean[obs_idx]
         reference_cov = np.cov(theta_samples[obs_idx], rowvar=False)
         for ensemble_idx in range(validation_num_ensembles):
+            if progress:
+                print(
+                    "GLM validation "
+                    f"{ensemble_idx + 1}/{validation_num_ensembles} "
+                    f"for observation {obs_idx}",
+                    flush=True,
+                )
             result = run_glm_emcee_reference(
                 x_full[obs_idx],
                 simulator=simulator,
@@ -344,13 +387,11 @@ def generate_glm_reference_posteriors(
     diagnostics = {
         "posterior_sample_mean": posterior_sample_mean,
         "posterior_sample_std": posterior_sample_std,
-        "prior_low": simulator.prior_low,
-        "prior_high": simulator.prior_high,
-        "num_prior_bound_violations": np.array(
-            np.count_nonzero(
-                (theta_samples < simulator.prior_low)
-                | (theta_samples > simulator.prior_high)
-            ),
+        "prior_mean": simulator.prior_mean,
+        "prior_covariance": simulator.prior_covariance,
+        "prior_precision": simulator.prior_precision,
+        "num_nonfinite_prior_log_prob": np.array(
+            np.count_nonzero(~np.isfinite(simulator.log_prior(theta_samples.reshape(-1, simulator.theta_dim)))),
             dtype=np.int64,
         ),
         "acceptance_fraction": acceptance_fraction,
@@ -676,15 +717,11 @@ def glm_log_prob(
     single = theta_array.ndim == 1
     if single:
         theta_array = theta_array[None, :]
-    log_prob = np.full(theta_array.shape[0], -np.inf, dtype=float)
-    in_prior = np.all(
-        (theta_array >= simulator.prior_low)
-        & (theta_array <= simulator.prior_high),
-        axis=1,
-    )
-    if np.any(in_prior):
-        log_prob[in_prior] = glm_log_likelihood(
-            theta_array[in_prior],
+    log_prob = simulator.log_prior(theta_array)
+    finite = np.isfinite(log_prob)
+    if np.any(finite):
+        log_prob[finite] += glm_log_likelihood(
+            theta_array[finite],
             x_full,
             simulator,
         )
@@ -755,13 +792,12 @@ def find_glm_map(
     x_full: np.ndarray,
     simulator: GLMSimulator,
 ) -> tuple[np.ndarray, float]:
-    """Find a bounded GLM posterior mode for walker initialization."""
+    """Find a GLM posterior mode for walker initialization."""
     starts = [
-        np.zeros(simulator.theta_dim, dtype=float),
-        np.full(simulator.theta_dim, 0.5, dtype=float),
-        np.full(simulator.theta_dim, -0.5, dtype=float),
+        simulator.prior_mean,
+        simulator.prior_mean + 0.5 * np.sqrt(np.diag(simulator.prior_covariance)),
+        simulator.prior_mean - 0.5 * np.sqrt(np.diag(simulator.prior_covariance)),
     ]
-    bounds = list(zip(simulator.prior_low, simulator.prior_high, strict=True))
 
     def objective(theta: np.ndarray) -> float:
         return -float(glm_log_prob(theta, x_full, simulator))
@@ -773,7 +809,6 @@ def find_glm_map(
             objective,
             start,
             method="L-BFGS-B",
-            bounds=bounds,
         )
         if result.success and float(result.fun) < best_fun:
             best_x = np.asarray(result.x, dtype=float)
@@ -789,33 +824,20 @@ def initialize_glm_walkers(
     scale: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Initialize GLM walkers near a mode while respecting prior support."""
+    """Initialize GLM walkers near a mode with finite Gaussian prior density."""
     walkers = rng.normal(
         loc=center,
         scale=scale,
         size=(num_walkers, simulator.theta_dim),
     )
-    invalid = np.any(
-        (walkers <= simulator.prior_low)
-        | (walkers >= simulator.prior_high),
-        axis=1,
-    )
+    invalid = ~np.isfinite(simulator.log_prior(walkers))
     while np.any(invalid):
         walkers[invalid] = rng.normal(
             loc=center,
             scale=scale,
             size=(int(np.sum(invalid)), simulator.theta_dim),
         )
-        walkers = np.clip(
-            walkers,
-            simulator.prior_low + 1e-6,
-            simulator.prior_high - 1e-6,
-        )
-        invalid = np.any(
-            (walkers <= simulator.prior_low)
-            | (walkers >= simulator.prior_high),
-            axis=1,
-        )
+        invalid = ~np.isfinite(simulator.log_prior(walkers))
     return walkers
 
 
@@ -1448,36 +1470,53 @@ def plot_reference_posterior_pairs(
     paths: list[Path] = []
     for obs_idx in range(theta_samples.shape[0]):
         fig, axes = plt.subplots(
-            theta_dim - 1,
-            theta_dim - 1,
-            figsize=(3.0 * (theta_dim - 1), 2.8 * (theta_dim - 1)),
+            theta_dim,
+            theta_dim,
+            figsize=(2.2 * theta_dim, 2.1 * theta_dim),
             squeeze=False,
         )
-        for row, dim_y in enumerate(range(1, theta_dim)):
-            for col, dim_x in enumerate(range(theta_dim - 1)):
+        for dim_y in range(theta_dim):
+            for dim_x in range(theta_dim):
+                row, col = dim_y, dim_x
                 ax = axes[row, col]
-                if dim_x >= dim_y:
+                if dim_x > dim_y:
                     ax.axis("off")
                     continue
-                ax.hist2d(
-                    plot_samples[obs_idx, :, dim_x],
-                    plot_samples[obs_idx, :, dim_y],
-                    bins=bins,
-                    cmap="viridis",
-                    density=True,
-                )
-                ax.scatter(
-                    theta_true[obs_idx, dim_x],
-                    theta_true[obs_idx, dim_y],
-                    color="C3",
-                    marker="x",
-                    s=45,
-                    linewidths=1.6,
-                )
-                ax.set_xlabel(f"theta[{dim_x}]", fontsize=8)
-                ax.set_ylabel(f"theta[{dim_y}]", fontsize=8)
+                if dim_x == dim_y:
+                    ax.hist(
+                        plot_samples[obs_idx, :, dim_x],
+                        bins=bins,
+                        density=True,
+                        color="C0",
+                        alpha=0.75,
+                    )
+                    ax.axvline(
+                        theta_true[obs_idx, dim_x],
+                        color="C3",
+                        linewidth=1.4,
+                    )
+                else:
+                    ax.hist2d(
+                        plot_samples[obs_idx, :, dim_x],
+                        plot_samples[obs_idx, :, dim_y],
+                        bins=bins,
+                        cmap="viridis",
+                        density=True,
+                    )
+                    ax.scatter(
+                        theta_true[obs_idx, dim_x],
+                        theta_true[obs_idx, dim_y],
+                        color="C3",
+                        marker="x",
+                        s=45,
+                        linewidths=1.6,
+                    )
+                if dim_y == theta_dim - 1:
+                    ax.set_xlabel(f"theta[{dim_x}]", fontsize=8)
+                if dim_x == 0 and dim_y > 0:
+                    ax.set_ylabel(f"theta[{dim_y}]", fontsize=8)
                 ax.tick_params(axis="both", labelsize=7)
-        fig.suptitle(f"{problem} reference posterior pairs {obs_idx:02d}", fontsize=12)
+        fig.suptitle(f"{problem} reference posterior corner {obs_idx:02d}", fontsize=12)
         fig.tight_layout()
         path = output_path / f"{problem}_reference_{obs_idx:02d}_pair.png"
         fig.savefig(path, dpi=180, bbox_inches="tight")
@@ -1650,6 +1689,257 @@ def plot_lotka_volterra_reference_predictives(
         ax.legend(fontsize="x-small", ncols=2)
         fig.tight_layout()
         path = output_path / f"lotka_volterra_reference_{obs_idx:02d}_predictive.png"
+        fig.savefig(path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        paths.append(path)
+    return paths
+
+
+def plot_oup_reference_predictives(
+    reference_path: str | os.PathLike[str],
+    *,
+    output_dir: str | os.PathLike[str] | None = None,
+    max_samples: int = 1_000,
+    seed: int = 123,
+) -> list[Path]:
+    """Plot stochastic posterior predictive bands for OUP reference posteriors."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    observations, theta_samples, metadata, _ = load_reference_posteriors_hdf5(
+        reference_path
+    )
+    if metadata.get("problem") != "oup":
+        return []
+    reference_path = Path(reference_path)
+    if output_dir is None:
+        output_path = reference_path.parent / "plots"
+    else:
+        output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    simulator_metadata = metadata["simulator"]
+    simulator = OUPSimulator(
+        n=int(simulator_metadata["n"]),
+        T=float(simulator_metadata["T"]),
+        var=float(simulator_metadata["var"]),
+        y0=float(simulator_metadata["y0"]),
+        prior_low=np.asarray(simulator_metadata["prior_low"], dtype=float),
+        prior_high=np.asarray(simulator_metadata["prior_high"], dtype=float),
+    )
+    time = np.arange(simulator.n) * simulator.dt
+    rng = np.random.default_rng(seed)
+
+    paths: list[Path] = []
+    for obs_idx in range(theta_samples.shape[0]):
+        samples = theta_samples[obs_idx]
+        if samples.shape[0] > max_samples:
+            sample_idx = rng.choice(samples.shape[0], size=max_samples, replace=False)
+            samples = samples[sample_idx]
+        predictive_rng = np.random.default_rng(seed + 10_000 + obs_idx)
+        trajectories = simulator.simulate(samples, predictive_rng)
+        q05, q50, q95 = np.quantile(trajectories, [0.05, 0.5, 0.95], axis=0)
+        observed = observations["x_full"][obs_idx]
+
+        fig, ax = plt.subplots(figsize=(7.2, 4.4))
+        ax.fill_between(
+            time,
+            q05,
+            q95,
+            color="C0",
+            alpha=0.2,
+            label="90% predictive band",
+        )
+        ax.plot(time, q50, color="C0", linewidth=1.7, label="predictive median")
+        ax.plot(time, observed, color="C3", linewidth=1.5, label="observed")
+        ax.scatter(time, observed, color="C3", edgecolor="white", linewidth=0.4, s=18)
+        ax.set_xlabel("time")
+        ax.set_ylabel("x")
+        ax.set_title(f"oup posterior predictive {obs_idx:02d}")
+        ax.legend(fontsize="small")
+        fig.tight_layout()
+        path = output_path / f"oup_reference_{obs_idx:02d}_predictive.png"
+        fig.savefig(path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        paths.append(path)
+    return paths
+
+
+def plot_glu_reference_predictives(
+    reference_path: str | os.PathLike[str],
+    *,
+    output_dir: str | os.PathLike[str] | None = None,
+    max_samples: int = 10_000,
+    seed: int = 123,
+) -> list[Path]:
+    """Plot posterior predictive bands for GLU reference posteriors."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    observations, theta_samples, metadata, _ = load_reference_posteriors_hdf5(
+        reference_path
+    )
+    if metadata.get("problem") != "glu":
+        return []
+    reference_path = Path(reference_path)
+    if output_dir is None:
+        output_path = reference_path.parent / "plots"
+    else:
+        output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    simulator_metadata = metadata["simulator"]
+    simulator_scale = float(simulator_metadata["simulator_scale"])
+    rng = np.random.default_rng(seed)
+    dim = theta_samples.shape[2]
+    dims = np.arange(dim)
+
+    paths: list[Path] = []
+    for obs_idx in range(theta_samples.shape[0]):
+        samples = theta_samples[obs_idx]
+        if samples.shape[0] > max_samples:
+            sample_idx = rng.choice(samples.shape[0], size=max_samples, replace=False)
+            samples = samples[sample_idx]
+        predictive_rng = np.random.default_rng(seed + 20_000 + obs_idx)
+        x_rep = samples + predictive_rng.normal(
+            loc=0.0,
+            scale=simulator_scale,
+            size=samples.shape,
+        )
+        q05, q50, q95 = np.quantile(x_rep, [0.05, 0.5, 0.95], axis=0)
+        observed = observations["x_full"][obs_idx]
+
+        fig, ax = plt.subplots(figsize=(7.2, 4.2))
+        ax.fill_between(
+            dims,
+            q05,
+            q95,
+            color="C0",
+            alpha=0.22,
+            step="mid",
+            label="90% predictive band",
+        )
+        ax.plot(dims, q50, color="C0", marker="o", linewidth=1.5, label="predictive median")
+        ax.scatter(
+            dims,
+            observed,
+            color="C3",
+            edgecolor="white",
+            linewidth=0.5,
+            s=34,
+            label="observed",
+            zorder=3,
+        )
+        ax.set_xlabel("dimension")
+        ax.set_ylabel("x")
+        ax.set_xticks(dims)
+        ax.set_title(f"glu posterior predictive {obs_idx:02d}")
+        ax.legend(fontsize="small")
+        fig.tight_layout()
+        path = output_path / f"glu_reference_{obs_idx:02d}_predictive.png"
+        fig.savefig(path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        paths.append(path)
+    return paths
+
+
+def plot_glm_reference_predictives(
+    reference_path: str | os.PathLike[str],
+    *,
+    output_dir: str | os.PathLike[str] | None = None,
+    max_samples: int = 10_000,
+    seed: int = 123,
+) -> list[Path]:
+    """Plot posterior predictive spike-probability bands for GLM references."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    observations, theta_samples, metadata, _ = load_reference_posteriors_hdf5(
+        reference_path
+    )
+    if metadata.get("problem") != "glm":
+        return []
+    reference_path = Path(reference_path)
+    if output_dir is None:
+        output_path = reference_path.parent / "plots"
+    else:
+        output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    simulator_metadata = metadata["simulator"]
+    simulator = GLMSimulator(
+        dim=int(simulator_metadata["dim"]),
+        duration=int(simulator_metadata["duration"]),
+        stimulus_seed=int(simulator_metadata["stimulus_seed"]),
+        summary="raw",
+    )
+    rng = np.random.default_rng(seed)
+    time = np.arange(simulator.duration)
+
+    paths: list[Path] = []
+    for obs_idx in range(theta_samples.shape[0]):
+        samples = theta_samples[obs_idx]
+        if samples.shape[0] > max_samples:
+            sample_idx = rng.choice(samples.shape[0], size=max_samples, replace=False)
+            samples = samples[sample_idx]
+        probabilities = simulator._sigmoid(samples @ simulator.design_matrix.T)
+        q05, q50, q95 = np.quantile(probabilities, [0.05, 0.5, 0.95], axis=0)
+        observed = observations["x_full"][obs_idx].astype(float)
+        expected_count = probabilities.sum(axis=1)
+
+        fig, axes = plt.subplots(
+            2,
+            1,
+            figsize=(8.0, 5.6),
+            gridspec_kw={"height_ratios": [2.0, 1.0]},
+        )
+        ax = axes[0]
+        ax.fill_between(
+            time,
+            q05,
+            q95,
+            color="C0",
+            alpha=0.22,
+            label="90% probability band",
+        )
+        ax.plot(time, q50, color="C0", linewidth=1.5, label="probability median")
+        spike_times = time[observed == 1.0]
+        if spike_times.size > 0:
+            ax.scatter(
+                spike_times,
+                np.full(spike_times.shape, 1.03),
+                color="C3",
+                marker="|",
+                s=80,
+                linewidth=1.4,
+                label="observed spike",
+                clip_on=False,
+            )
+        ax.set_ylim(-0.03, 1.08)
+        ax.set_xlabel("time bin")
+        ax.set_ylabel("spike probability")
+        ax.set_title(f"glm posterior predictive probabilities {obs_idx:02d}")
+        ax.legend(fontsize="small")
+
+        ax_count = axes[1]
+        ax_count.hist(expected_count, bins=40, color="C0", alpha=0.75)
+        ax_count.axvline(
+            observed.sum(),
+            color="C3",
+            linewidth=1.5,
+            label="observed spike count",
+        )
+        ax_count.set_xlabel("posterior expected spike count")
+        ax_count.set_ylabel("count")
+        ax_count.legend(fontsize="small")
+        fig.tight_layout()
+        path = output_path / f"glm_reference_{obs_idx:02d}_predictive.png"
         fig.savefig(path, dpi=180, bbox_inches="tight")
         plt.close(fig)
         paths.append(path)

@@ -474,6 +474,7 @@ def test_lotka_volterra_time_block_mcar_pairs_population_entries() -> None:
     assert mask.dtype == np.int8
     _assert_binary(mask)
     assert np.all(reshaped[:, :, 0] == reshaped[:, :, 1])
+    assert np.all(np.sum(reshaped[:, :, 0] == 0, axis=1) == round(0.25 * 50))
 
 
 def test_lotka_volterra_time_mar_increasing_masks_later_times_more() -> None:

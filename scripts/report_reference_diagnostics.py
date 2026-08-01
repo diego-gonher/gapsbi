@@ -50,6 +50,10 @@ def build_report(reference_path: Path) -> str:
         lines.append(
             f"Prior-bound violations: {np.asarray(diagnostics['num_prior_bound_violations']).item()}"
         )
+    if "num_nonfinite_prior_log_prob" in diagnostics:
+        lines.append(
+            f"Nonfinite prior log-prob samples: {np.asarray(diagnostics['num_nonfinite_prior_log_prob']).item()}"
+        )
     if "grid_ess" in diagnostics:
         lines.extend(
             [

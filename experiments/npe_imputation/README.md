@@ -19,10 +19,10 @@ Method names recorded in outputs:
 ## Canonical preprocessing
 
 1. Load `theta`, `x_full`, `x_obs`, and `mask` from train/val/test HDF5 groups.
-2. Scale `theta` with `MinMaxScaler(feature_range=(-1, 1))` fit on train only.
+2. Scale `theta` with train-only `StandardScaler` for GLM/Lotka-Volterra and `MinMaxScaler(feature_range=(-1, 1))` for bounded-prior tasks.
 3. Fit x scaler on `x_full_train` only:
-   - GLM/GLU/OUP: `StandardScaler`
-   - Ricker: `log1p + StandardScaler`
+   - GLM/GLU/OUP/Lotka-Volterra: `StandardScaler`
+   - legacy Ricker: `log1p + StandardScaler`
 4. Transform `x_obs` with that scaler.
 5. Impute missing entries in scaled x-space (`zero` or `mean`).
 6. Train `FixedSplitNPE_C` on imputed x only.

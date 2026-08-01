@@ -6,18 +6,61 @@ import numpy as np
 import torch
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
+ThetaScaler = MinMaxScaler | StandardScaler
+
+
+def infer_theta_transform(problem_name: str | None) -> str:
+    """Return the default theta transform for a given problem name."""
+    if problem_name is not None and problem_name.lower() in {
+        "glm",
+        "glm_raw",
+        "lotka_volterra",
+    }:
+        return "standard"
+    return "minmax_minus_one_one"
+
+
+def theta_scaling_metadata(transform: str) -> dict[str, Any]:
+    """Return serializable metadata for a theta transform."""
+    if transform == "standard":
+        scaler = "standard"
+    elif transform == "minmax_minus_one_one":
+        scaler = "minmax"
+    else:
+        raise ValueError(
+            "Invalid theta transform. Expected one of "
+            "{'minmax_minus_one_one', 'standard'}, got "
+            f"{transform!r}."
+        )
+    return {
+        "transform": transform,
+        "scaler": scaler,
+        "fit_source": "theta_train",
+    }
+
 
 def scale_theta_train_val_test(
     theta_train: np.ndarray,
     theta_val: np.ndarray,
     theta_test: np.ndarray,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, MinMaxScaler]:
-    """Scale theta splits with MinMaxScaler(-1, 1), fit on train only."""
+    transform: str = "minmax_minus_one_one",
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, ThetaScaler]:
+    """Scale theta splits with a train-only fitted scaler."""
     theta_train_np = np.asarray(theta_train)
     theta_val_np = np.asarray(theta_val)
     theta_test_np = np.asarray(theta_test)
 
-    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+    if transform == "minmax_minus_one_one":
+        theta_scaler: ThetaScaler = MinMaxScaler(feature_range=(-1, 1))
+    elif transform == "standard":
+        theta_scaler = StandardScaler()
+    else:
+        raise ValueError(
+            "Invalid theta transform. Expected one of "
+            "{'minmax_minus_one_one', 'standard'}, got "
+            f"{transform!r}."
+        )
+
     theta_train_scaled = theta_scaler.fit_transform(theta_train_np)
     theta_val_scaled = theta_scaler.transform(theta_val_np)
     theta_test_scaled = theta_scaler.transform(theta_test_np)
@@ -28,6 +71,39 @@ def scale_theta_train_val_test(
         torch.tensor(theta_test_scaled, dtype=torch.float32),
         theta_scaler,
     )
+
+
+def make_scaled_theta_prior(
+    problem_name: str,
+    theta_dim: int,
+    theta_train_scaled: torch.Tensor | None = None,
+):
+    """Build the NPE prior in the theta-scaled space."""
+    if theta_dim <= 0:
+        raise ValueError(f"theta_dim must be positive, got {theta_dim}.")
+    if infer_theta_transform(problem_name) == "standard":
+        loc = torch.zeros(theta_dim)
+        covariance = torch.eye(theta_dim)
+        if theta_train_scaled is not None and theta_train_scaled.shape[0] >= 2:
+            theta_train_scaled = theta_train_scaled.detach().cpu().to(
+                dtype=torch.float32
+            )
+            if theta_train_scaled.ndim != 2 or theta_train_scaled.shape[1] != theta_dim:
+                raise ValueError(
+                    f"theta_train_scaled must have shape (n, {theta_dim}), got "
+                    f"{tuple(theta_train_scaled.shape)}."
+                )
+            centered = theta_train_scaled - theta_train_scaled.mean(dim=0, keepdim=True)
+            covariance = centered.T @ centered / theta_train_scaled.shape[0]
+            covariance = covariance + 1e-5 * torch.eye(theta_dim)
+        return torch.distributions.MultivariateNormal(
+            loc=loc,
+            covariance_matrix=covariance,
+        )
+
+    from sbi.utils import BoxUniform
+
+    return BoxUniform(low=-torch.ones(theta_dim), high=torch.ones(theta_dim))
 
 
 def scale_x_train_val_test(
