@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from gapsbi.references import (
+    plot_lotka_volterra_reference_predictives,
     plot_reference_mcmc_traces,
     plot_reference_posterior_marginals,
     plot_reference_posterior_pairs,
@@ -47,6 +48,14 @@ def main() -> None:
                 output_dir=args.output_dir,
             )
         )
+    paths.extend(
+        plot_lotka_volterra_reference_predictives(
+            args.reference_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            seed=args.seed,
+        )
+    )
     print(f"Saved {len(paths)} plots")
     for path in paths:
         print(path)

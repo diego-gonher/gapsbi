@@ -13,9 +13,12 @@ from gapsbi.references import (
     compute_oup_grid_posterior,
     generate_glm_reference_posteriors,
     generate_glu_reference_posteriors,
+    generate_lotka_volterra_reference_posteriors,
     generate_oup_reference_posteriors,
     glm_log_likelihood,
     load_reference_posteriors_hdf5,
+    lotka_volterra_log_likelihood,
+    plot_lotka_volterra_reference_predictives,
     oup_log_likelihood,
     plot_reference_mcmc_traces,
     plot_reference_posterior_marginals,
@@ -23,7 +26,7 @@ from gapsbi.references import (
     save_reference_posteriors_hdf5,
     sample_glu_reference_posterior,
 )
-from gapsbi.simulators import GLMSimulator, OUPSimulator
+from gapsbi.simulators import GLMSimulator, LotkaVolterraSimulator, OUPSimulator
 
 
 def test_generate_glu_reference_posteriors_contract() -> None:
@@ -334,6 +337,116 @@ def test_plot_reference_mcmc_traces_saves_when_available(tmp_path: Path) -> None
     )
 
     paths = plot_reference_mcmc_traces(reference_path)
+
+    assert len(paths) == 1
+    assert paths[0].exists()
+
+
+def test_lotka_volterra_log_likelihood_is_finite_at_noiseless_trajectory() -> None:
+    simulator = LotkaVolterraSimulator(
+        num_timepoints=8,
+        days=3.0,
+        observation_noise_scale=0.1,
+    )
+    theta = np.array([0.8, 0.05, 0.8, 0.05])
+    states = simulator._solve_states(theta).T.reshape(-1)
+
+    actual = lotka_volterra_log_likelihood(np.log(theta), states, simulator)
+
+    assert np.isfinite(actual)
+
+
+def test_generate_lotka_volterra_reference_posteriors_contract_short_mcmc() -> None:
+    observations, metadata, reference_data = generate_lotka_volterra_reference_posteriors(
+        num_observations=1,
+        num_reference_samples=20,
+        observation_seed=123,
+        posterior_seed=456,
+        num_timepoints=8,
+        days=3.0,
+        num_walkers=12,
+        burn_in_steps=8,
+        production_steps=10,
+        trace_num_steps=5,
+        trace_num_walkers=3,
+        validation_num_ensembles=0,
+        validation_observation_indices=(),
+    )
+
+    theta_samples = reference_data["theta_samples"]
+    assert observations["theta_true"].shape == (1, 4)
+    assert observations["x_full"].shape == (1, 16)
+    assert theta_samples.shape == (1, 20, 4)
+    assert metadata["problem"] == "lotka_volterra"
+    assert metadata["posterior_method"] == "emcee_log_space_exact_likelihood"
+    assert metadata["sampling_space"] == "log_theta"
+    assert reference_data["acceptance_fraction"].shape == (1,)
+    assert reference_data["log_theta_split_rhat"].shape == (1, 4)
+    assert reference_data["mcmc_trace"].shape == (1, 5, 3, 4)
+    assert reference_data["log_theta_mcmc_trace"].shape == (1, 5, 3, 4)
+    assert reference_data["num_nonpositive_theta_samples"] == 0
+    assert np.all(theta_samples > 0)
+
+
+def test_plot_reference_pair_saves_for_four_dimensional_references(tmp_path: Path) -> None:
+    observations, metadata, reference_data = generate_lotka_volterra_reference_posteriors(
+        num_observations=1,
+        num_reference_samples=20,
+        observation_seed=123,
+        posterior_seed=456,
+        num_timepoints=8,
+        days=3.0,
+        num_walkers=12,
+        burn_in_steps=8,
+        production_steps=10,
+        trace_num_steps=5,
+        trace_num_walkers=3,
+        validation_num_ensembles=0,
+        validation_observation_indices=(),
+    )
+    theta_samples = reference_data.pop("theta_samples")
+    reference_path = tmp_path / "lotka_volterra_references.h5"
+    save_reference_posteriors_hdf5(
+        reference_path,
+        observations=observations,
+        theta_samples=theta_samples,
+        metadata=metadata,
+        diagnostics=reference_data,
+    )
+
+    paths = plot_reference_posterior_pairs(reference_path, max_samples=20)
+
+    assert len(paths) == 1
+    assert paths[0].exists()
+
+
+def test_plot_lotka_volterra_reference_predictives_saves_file(tmp_path: Path) -> None:
+    observations, metadata, reference_data = generate_lotka_volterra_reference_posteriors(
+        num_observations=1,
+        num_reference_samples=20,
+        observation_seed=123,
+        posterior_seed=456,
+        num_timepoints=8,
+        days=3.0,
+        num_walkers=12,
+        burn_in_steps=8,
+        production_steps=10,
+        trace_num_steps=5,
+        trace_num_walkers=3,
+        validation_num_ensembles=0,
+        validation_observation_indices=(),
+    )
+    theta_samples = reference_data.pop("theta_samples")
+    reference_path = tmp_path / "lotka_volterra_references.h5"
+    save_reference_posteriors_hdf5(
+        reference_path,
+        observations=observations,
+        theta_samples=theta_samples,
+        metadata=metadata,
+        diagnostics=reference_data,
+    )
+
+    paths = plot_lotka_volterra_reference_predictives(reference_path, max_samples=20)
 
     assert len(paths) == 1
     assert paths[0].exists()

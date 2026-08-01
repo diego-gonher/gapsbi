@@ -115,6 +115,31 @@ def build_report(reference_path: Path) -> str:
                 ),
             ]
         )
+    if "log_theta_split_rhat" in diagnostics:
+        lines.extend(
+            [
+                _summary_line("log_theta_split_rhat", diagnostics["log_theta_split_rhat"]),
+                _summary_line("log_theta_emcee_ess", diagnostics["log_theta_emcee_ess"]),
+            ]
+        )
+    if "ode_failure_count" in diagnostics:
+        lines.extend(
+            [
+                _summary_line("ode_failure_count", diagnostics["ode_failure_count"]),
+                _summary_line(
+                    "posterior_predictive_log_rmse_mean",
+                    diagnostics["posterior_predictive_log_rmse_mean"],
+                ),
+                _summary_line(
+                    "posterior_predictive_log_rmse_q05",
+                    diagnostics["posterior_predictive_log_rmse_q05"],
+                ),
+                _summary_line(
+                    "posterior_predictive_log_rmse_q95",
+                    diagnostics["posterior_predictive_log_rmse_q95"],
+                ),
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 

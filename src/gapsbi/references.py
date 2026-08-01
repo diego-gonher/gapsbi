@@ -9,9 +9,9 @@ import h5py
 import numpy as np
 from scipy.optimize import minimize
 from scipy.special import logsumexp
-from scipy.stats import truncnorm
+from scipy.stats import norm, truncnorm
 
-from gapsbi.simulators import GLMSimulator, GLUSimulator, OUPSimulator
+from gapsbi.simulators import GLMSimulator, GLUSimulator, LotkaVolterraSimulator, OUPSimulator
 
 
 REFERENCE_SCHEMA_NAME = "gapsbi_reference_posteriors"
@@ -369,6 +369,234 @@ def generate_glm_reference_posteriors(
     return observations, metadata, {"theta_samples": theta_samples, **diagnostics}
 
 
+def generate_lotka_volterra_reference_posteriors(
+    *,
+    num_observations: int = 10,
+    num_reference_samples: int = 10_000,
+    observation_seed: int = 12_345,
+    posterior_seed: int = 23_456,
+    num_timepoints: int = 50,
+    days: float = 20.0,
+    observation_noise_scale: float = 0.1,
+    num_walkers: int = 64,
+    burn_in_steps: int = 1_500,
+    production_steps: int = 3_000,
+    initial_scale: float = 0.08,
+    trace_num_steps: int = 1_000,
+    trace_num_walkers: int = 8,
+    validation_num_ensembles: int = 1,
+    validation_observation_indices: tuple[int, ...] = (0, 1),
+    progress: bool = False,
+) -> tuple[dict[str, np.ndarray], dict[str, Any], dict[str, np.ndarray]]:
+    """Generate fixed Lotka-Volterra observations and log-space emcee references."""
+    if num_observations <= 0:
+        raise ValueError("num_observations must be positive.")
+    if num_reference_samples <= 0:
+        raise ValueError("num_reference_samples must be positive.")
+    if num_walkers < 2 * 4:
+        raise ValueError("num_walkers must be at least 2 * theta_dim for emcee.")
+    if burn_in_steps <= 0 or production_steps <= 0:
+        raise ValueError("burn_in_steps and production_steps must be positive.")
+
+    simulator = LotkaVolterraSimulator(
+        num_timepoints=num_timepoints,
+        days=days,
+        observation_noise_scale=observation_noise_scale,
+    )
+    observation_rng = np.random.default_rng(observation_seed)
+    posterior_rng = np.random.default_rng(posterior_seed)
+
+    theta_true = simulator.sample_theta(num_observations, observation_rng)
+    x_full = simulator.simulate(theta_true, observation_rng)
+    theta_samples = np.empty(
+        (num_observations, num_reference_samples, simulator.theta_dim),
+        dtype=float,
+    )
+
+    acceptance_fraction = np.empty(num_observations, dtype=float)
+    autocorr_time = np.full((num_observations, simulator.theta_dim), np.nan, dtype=float)
+    emcee_ess = np.full((num_observations, simulator.theta_dim), np.nan, dtype=float)
+    split_rhat = np.full((num_observations, simulator.theta_dim), np.nan, dtype=float)
+    log_theta_split_rhat = np.full_like(split_rhat, np.nan)
+    log_theta_emcee_ess = np.full_like(emcee_ess, np.nan)
+    walker_group_mean_l2_max = np.empty(num_observations, dtype=float)
+    walker_group_std_l2_max = np.empty(num_observations, dtype=float)
+    map_estimate = np.empty((num_observations, simulator.theta_dim), dtype=float)
+    map_log_theta = np.empty_like(map_estimate)
+    map_log_prob = np.empty(num_observations, dtype=float)
+    posterior_sample_mean = np.empty((num_observations, simulator.theta_dim), dtype=float)
+    posterior_sample_std = np.empty((num_observations, simulator.theta_dim), dtype=float)
+    log_theta_sample_mean = np.empty_like(posterior_sample_mean)
+    log_theta_sample_std = np.empty_like(posterior_sample_std)
+    ode_failure_count = np.empty(num_observations, dtype=np.int64)
+    posterior_predictive_log_rmse_mean = np.empty(num_observations, dtype=float)
+    posterior_predictive_log_rmse_q05 = np.empty(num_observations, dtype=float)
+    posterior_predictive_log_rmse_q95 = np.empty(num_observations, dtype=float)
+    trace_steps = min(trace_num_steps, production_steps)
+    trace_walkers = min(trace_num_walkers, num_walkers)
+    mcmc_trace = np.empty(
+        (num_observations, trace_steps, trace_walkers, simulator.theta_dim),
+        dtype=float,
+    )
+    log_theta_mcmc_trace = np.empty_like(mcmc_trace)
+    validation_mean_l2_delta = np.full(
+        (validation_num_ensembles, len(validation_observation_indices)),
+        np.nan,
+        dtype=float,
+    )
+    validation_cov_fro_delta = np.full_like(validation_mean_l2_delta, np.nan)
+
+    for obs_idx in range(num_observations):
+        if progress:
+            print(
+                f"LV reference {obs_idx + 1}/{num_observations}: running MCMC",
+                flush=True,
+            )
+        result = run_lotka_volterra_emcee_reference(
+            x_full[obs_idx],
+            simulator=simulator,
+            num_walkers=num_walkers,
+            burn_in_steps=burn_in_steps,
+            production_steps=production_steps,
+            initial_scale=initial_scale,
+            initial_log_theta=np.log(theta_true[obs_idx]),
+            rng=posterior_rng,
+        )
+        chain = np.asarray(result["chain"], dtype=float)
+        log_chain = np.asarray(result["log_theta_chain"], dtype=float)
+        samples_flat = chain.reshape(-1, simulator.theta_dim)
+        sample_indices = posterior_rng.choice(
+            samples_flat.shape[0],
+            size=num_reference_samples,
+            replace=samples_flat.shape[0] < num_reference_samples,
+        )
+        theta_samples[obs_idx] = samples_flat[sample_indices]
+        acceptance_fraction[obs_idx] = float(result["acceptance_fraction"])
+        autocorr_time[obs_idx] = np.asarray(result["autocorr_time"], dtype=float)
+        emcee_ess[obs_idx] = np.asarray(result["emcee_ess"], dtype=float)
+        split_rhat[obs_idx] = np.asarray(result["split_rhat"], dtype=float)
+        log_theta_split_rhat[obs_idx] = np.asarray(result["log_theta_split_rhat"], dtype=float)
+        log_theta_emcee_ess[obs_idx] = np.asarray(result["log_theta_emcee_ess"], dtype=float)
+        walker_group_mean_l2_max[obs_idx] = float(result["walker_group_mean_l2_max"])
+        walker_group_std_l2_max[obs_idx] = float(result["walker_group_std_l2_max"])
+        map_estimate[obs_idx] = np.asarray(result["map_estimate"], dtype=float)
+        map_log_theta[obs_idx] = np.asarray(result["map_log_theta"], dtype=float)
+        map_log_prob[obs_idx] = float(result["map_log_prob"])
+        posterior_sample_mean[obs_idx] = theta_samples[obs_idx].mean(axis=0)
+        posterior_sample_std[obs_idx] = theta_samples[obs_idx].std(axis=0)
+        log_theta_samples = np.log(theta_samples[obs_idx])
+        log_theta_sample_mean[obs_idx] = log_theta_samples.mean(axis=0)
+        log_theta_sample_std[obs_idx] = log_theta_samples.std(axis=0)
+        ode_failure_count[obs_idx] = int(result["ode_failure_count"])
+        rmse = lotka_volterra_posterior_predictive_log_rmse(
+            theta_samples[obs_idx],
+            x_full[obs_idx],
+            simulator=simulator,
+        )
+        posterior_predictive_log_rmse_mean[obs_idx] = float(np.mean(rmse))
+        posterior_predictive_log_rmse_q05[obs_idx] = float(np.quantile(rmse, 0.05))
+        posterior_predictive_log_rmse_q95[obs_idx] = float(np.quantile(rmse, 0.95))
+        trace_idx = np.linspace(0, production_steps - 1, trace_steps, dtype=int)
+        mcmc_trace[obs_idx] = chain[trace_idx, :trace_walkers, :]
+        log_theta_mcmc_trace[obs_idx] = log_chain[trace_idx, :trace_walkers, :]
+        if progress:
+            max_rhat = float(np.nanmax(log_theta_split_rhat[obs_idx]))
+            min_ess = float(np.nanmin(log_theta_emcee_ess[obs_idx]))
+            print(
+                f"LV reference {obs_idx + 1}/{num_observations}: "
+                f"accept={acceptance_fraction[obs_idx]:.3f}, "
+                f"max_log_rhat={max_rhat:.3f}, min_log_ess={min_ess:.1f}",
+                flush=True,
+            )
+
+    for local_idx, obs_idx in enumerate(validation_observation_indices):
+        if obs_idx < 0 or obs_idx >= num_observations:
+            continue
+        reference_mean = posterior_sample_mean[obs_idx]
+        reference_cov = np.cov(theta_samples[obs_idx], rowvar=False)
+        for ensemble_idx in range(validation_num_ensembles):
+            if progress:
+                print(
+                    "LV validation ensemble "
+                    f"{ensemble_idx + 1}/{validation_num_ensembles} "
+                    f"for observation {obs_idx}",
+                    flush=True,
+                )
+            result = run_lotka_volterra_emcee_reference(
+                x_full[obs_idx],
+                simulator=simulator,
+                num_walkers=num_walkers,
+                burn_in_steps=burn_in_steps,
+                production_steps=production_steps,
+                initial_scale=initial_scale,
+                rng=posterior_rng,
+            )
+            samples_flat = np.asarray(result["chain"], dtype=float).reshape(
+                -1, simulator.theta_dim
+            )
+            validation_mean_l2_delta[ensemble_idx, local_idx] = float(
+                np.linalg.norm(samples_flat.mean(axis=0) - reference_mean)
+            )
+            validation_cov_fro_delta[ensemble_idx, local_idx] = float(
+                np.linalg.norm(np.cov(samples_flat, rowvar=False) - reference_cov, ord="fro")
+            )
+
+    observations = {
+        "theta_true": theta_true,
+        "x_full": x_full,
+    }
+    metadata = {
+        "problem": "lotka_volterra",
+        "posterior_method": "emcee_log_space_exact_likelihood",
+        "observation_seed": int(observation_seed),
+        "posterior_seed": int(posterior_seed),
+        "simulator": simulator.metadata(),
+        "theta_scaled": False,
+        "x_scaled": False,
+        "num_walkers": int(num_walkers),
+        "burn_in_steps": int(burn_in_steps),
+        "production_steps": int(production_steps),
+        "initial_scale": float(initial_scale),
+        "sampling_space": "log_theta",
+        "map_initialization": "prior_starts_plus_theta_true",
+        "validation_num_ensembles": int(validation_num_ensembles),
+        "validation_observation_indices": list(validation_observation_indices),
+    }
+    diagnostics = {
+        "posterior_sample_mean": posterior_sample_mean,
+        "posterior_sample_std": posterior_sample_std,
+        "log_theta_sample_mean": log_theta_sample_mean,
+        "log_theta_sample_std": log_theta_sample_std,
+        "prior_log_mean": simulator.prior_log_mean,
+        "prior_log_std": simulator.prior_log_std,
+        "num_nonpositive_theta_samples": np.array(
+            np.count_nonzero(theta_samples <= 0),
+            dtype=np.int64,
+        ),
+        "acceptance_fraction": acceptance_fraction,
+        "autocorr_time": autocorr_time,
+        "emcee_ess": emcee_ess,
+        "split_rhat": split_rhat,
+        "log_theta_split_rhat": log_theta_split_rhat,
+        "log_theta_emcee_ess": log_theta_emcee_ess,
+        "walker_group_mean_l2_max": walker_group_mean_l2_max,
+        "walker_group_std_l2_max": walker_group_std_l2_max,
+        "map_estimate": map_estimate,
+        "map_log_theta": map_log_theta,
+        "map_log_prob": map_log_prob,
+        "mcmc_trace": mcmc_trace,
+        "log_theta_mcmc_trace": log_theta_mcmc_trace,
+        "ode_failure_count": ode_failure_count,
+        "posterior_predictive_log_rmse_mean": posterior_predictive_log_rmse_mean,
+        "posterior_predictive_log_rmse_q05": posterior_predictive_log_rmse_q05,
+        "posterior_predictive_log_rmse_q95": posterior_predictive_log_rmse_q95,
+        "validation_observation_indices": np.asarray(validation_observation_indices, dtype=np.int64),
+        "validation_mean_l2_delta": validation_mean_l2_delta,
+        "validation_cov_fro_delta": validation_cov_fro_delta,
+    }
+    return observations, metadata, {"theta_samples": theta_samples, **diagnostics}
+
+
 def sample_glu_reference_posterior(
     *,
     x_full: np.ndarray,
@@ -589,6 +817,247 @@ def initialize_glm_walkers(
             axis=1,
         )
     return walkers
+
+
+def lotka_volterra_log_likelihood(
+    log_theta: np.ndarray,
+    x_full: np.ndarray,
+    simulator: LotkaVolterraSimulator | None = None,
+) -> np.ndarray:
+    """Evaluate the LV lognormal observation likelihood in log-parameter space."""
+    simulator = LotkaVolterraSimulator() if simulator is None else simulator
+    log_theta_array = np.asarray(log_theta, dtype=float)
+    single = log_theta_array.ndim == 1
+    if single:
+        log_theta_array = log_theta_array[None, :]
+    if log_theta_array.ndim != 2 or log_theta_array.shape[1] != simulator.theta_dim:
+        raise ValueError(
+            f"log_theta must have shape ({simulator.theta_dim},) or "
+            f"(batch, {simulator.theta_dim})."
+        )
+    x = np.asarray(x_full, dtype=float)
+    if x.shape != simulator.x_shape:
+        raise ValueError(f"x_full must have shape {simulator.x_shape}.")
+    if np.any(x <= 0):
+        raise ValueError("Lotka-Volterra x_full must be positive.")
+    if simulator.observation_noise_scale <= 0:
+        raise ValueError("LV likelihood requires positive observation_noise_scale.")
+
+    log_like = np.full(log_theta_array.shape[0], -np.inf, dtype=float)
+    for idx, log_theta_i in enumerate(log_theta_array):
+        if not np.all(np.isfinite(log_theta_i)):
+            continue
+        theta_i = np.exp(log_theta_i)
+        try:
+            states = simulator._solve_states(theta_i)
+        except Exception:
+            continue
+        mean_log = np.log(np.clip(states.T.reshape(-1), 1e-10, simulator.max_state))
+        log_like[idx] = np.sum(
+            norm.logpdf(
+                np.log(x),
+                loc=mean_log,
+                scale=simulator.observation_noise_scale,
+            )
+            - np.log(x)
+        )
+    return log_like[0] if single else log_like
+
+
+def lotka_volterra_log_prob(
+    log_theta: np.ndarray,
+    x_full: np.ndarray,
+    simulator: LotkaVolterraSimulator,
+) -> np.ndarray:
+    """Evaluate the LV log posterior over z=log(theta), up to a constant."""
+    log_theta_array = np.asarray(log_theta, dtype=float)
+    single = log_theta_array.ndim == 1
+    if single:
+        log_theta_array = log_theta_array[None, :]
+    log_prob = np.full(log_theta_array.shape[0], -np.inf, dtype=float)
+    finite = np.all(np.isfinite(log_theta_array), axis=1)
+    if np.any(finite):
+        prior = np.sum(
+            norm.logpdf(
+                log_theta_array[finite],
+                loc=simulator.prior_log_mean,
+                scale=simulator.prior_log_std,
+            ),
+            axis=1,
+        )
+        log_prob[finite] = prior + lotka_volterra_log_likelihood(
+            log_theta_array[finite],
+            x_full,
+            simulator,
+        )
+    return log_prob[0] if single else log_prob
+
+
+def run_lotka_volterra_emcee_reference(
+    x_full: np.ndarray,
+    *,
+    simulator: LotkaVolterraSimulator,
+    num_walkers: int,
+    burn_in_steps: int,
+    production_steps: int,
+    initial_scale: float,
+    initial_log_theta: np.ndarray | None = None,
+    rng: np.random.Generator,
+) -> dict[str, np.ndarray | float | int]:
+    """Run one emcee ensemble for an LV observation, sampling z=log(theta)."""
+    import emcee
+
+    map_log_theta, map_log_prob = find_lotka_volterra_map(
+        x_full,
+        simulator,
+        initial_log_theta=initial_log_theta,
+    )
+    initial_state = initialize_lotka_volterra_walkers(
+        center=map_log_theta,
+        simulator=simulator,
+        num_walkers=num_walkers,
+        scale=initial_scale,
+        rng=rng,
+    )
+    ode_failure_count = 0
+
+    def log_prob_fn(log_theta: np.ndarray) -> float:
+        nonlocal ode_failure_count
+        value = float(lotka_volterra_log_prob(log_theta, x_full, simulator))
+        if not np.isfinite(value):
+            ode_failure_count += 1
+        return value
+
+    sampler = emcee.EnsembleSampler(
+        num_walkers,
+        simulator.theta_dim,
+        log_prob_fn,
+    )
+    sampler.run_mcmc(initial_state, burn_in_steps, progress=False)
+    sampler.reset()
+    ode_failure_count = 0
+    sampler.run_mcmc(None, production_steps, progress=False)
+    log_theta_chain = sampler.get_chain()
+    chain = np.exp(log_theta_chain)
+    acceptance_fraction = float(np.mean(sampler.acceptance_fraction))
+    try:
+        log_theta_autocorr_time = sampler.get_autocorr_time(tol=0)
+        log_theta_emcee_ess = num_walkers * production_steps / log_theta_autocorr_time
+    except Exception:
+        log_theta_autocorr_time = np.full(simulator.theta_dim, np.nan, dtype=float)
+        log_theta_emcee_ess = np.full(simulator.theta_dim, np.nan, dtype=float)
+    split_rhat = compute_split_rhat(chain)
+    log_theta_split_rhat = compute_split_rhat(log_theta_chain)
+    theta_autocorr_time = log_theta_autocorr_time
+    theta_emcee_ess = log_theta_emcee_ess
+    (
+        walker_group_mean_l2_max,
+        walker_group_std_l2_max,
+    ) = compute_walker_group_agreement(chain)
+    return {
+        "chain": chain,
+        "log_theta_chain": log_theta_chain,
+        "acceptance_fraction": acceptance_fraction,
+        "autocorr_time": theta_autocorr_time,
+        "emcee_ess": theta_emcee_ess,
+        "split_rhat": split_rhat,
+        "log_theta_split_rhat": log_theta_split_rhat,
+        "log_theta_emcee_ess": log_theta_emcee_ess,
+        "walker_group_mean_l2_max": float(walker_group_mean_l2_max),
+        "walker_group_std_l2_max": float(walker_group_std_l2_max),
+        "map_estimate": np.exp(map_log_theta),
+        "map_log_theta": map_log_theta,
+        "map_log_prob": float(map_log_prob),
+        "ode_failure_count": int(ode_failure_count),
+    }
+
+
+def find_lotka_volterra_map(
+    x_full: np.ndarray,
+    simulator: LotkaVolterraSimulator,
+    initial_log_theta: np.ndarray | None = None,
+) -> tuple[np.ndarray, float]:
+    """Find an unconstrained LV posterior mode in log-parameter space."""
+    starts = [
+        simulator.prior_log_mean,
+        simulator.prior_log_mean + np.array([0.35, 0.0, 0.35, 0.0]),
+        simulator.prior_log_mean + np.array([-0.35, 0.0, -0.35, 0.0]),
+        simulator.prior_log_mean + np.array([0.0, 0.35, 0.0, 0.35]),
+        simulator.prior_log_mean + np.array([0.0, -0.35, 0.0, -0.35]),
+    ]
+    if initial_log_theta is not None:
+        starts.insert(0, np.asarray(initial_log_theta, dtype=float))
+
+    def objective(log_theta: np.ndarray) -> float:
+        value = float(lotka_volterra_log_prob(log_theta, x_full, simulator))
+        if not np.isfinite(value):
+            return 1e100
+        return -value
+
+    best_x = np.asarray(starts[0], dtype=float)
+    best_fun = objective(best_x)
+    for start in starts:
+        result = minimize(
+            objective,
+            np.asarray(start, dtype=float),
+            method="Nelder-Mead",
+            options={"maxiter": 1200, "xatol": 1e-4, "fatol": 1e-4},
+        )
+        if result.success and float(result.fun) < best_fun:
+            best_x = np.asarray(result.x, dtype=float)
+            best_fun = float(result.fun)
+    return best_x, -best_fun
+
+
+def initialize_lotka_volterra_walkers(
+    *,
+    center: np.ndarray,
+    simulator: LotkaVolterraSimulator,
+    num_walkers: int,
+    scale: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Initialize LV log-theta walkers near a mode with finite prior density."""
+    walkers = rng.normal(
+        loc=center,
+        scale=scale,
+        size=(num_walkers, simulator.theta_dim),
+    )
+    invalid = ~np.all(np.isfinite(walkers), axis=1)
+    while np.any(invalid):
+        walkers[invalid] = rng.normal(
+            loc=center,
+            scale=scale,
+            size=(int(np.sum(invalid)), simulator.theta_dim),
+        )
+        invalid = ~np.all(np.isfinite(walkers), axis=1)
+    return walkers
+
+
+def lotka_volterra_posterior_predictive_log_rmse(
+    theta_samples: np.ndarray,
+    x_full: np.ndarray,
+    *,
+    simulator: LotkaVolterraSimulator,
+    max_samples: int = 1_000,
+) -> np.ndarray:
+    """Compute deterministic posterior-predictive log RMSE for LV theta samples."""
+    samples = np.asarray(theta_samples, dtype=float)
+    if samples.ndim != 2 or samples.shape[1] != simulator.theta_dim:
+        raise ValueError("theta_samples must have shape (num_samples, 4).")
+    if samples.shape[0] > max_samples:
+        indices = np.linspace(0, samples.shape[0] - 1, max_samples, dtype=int)
+        samples = samples[indices]
+    observed_log = np.log(np.asarray(x_full, dtype=float))
+    rmse = np.full(samples.shape[0], np.nan, dtype=float)
+    for idx, theta in enumerate(samples):
+        try:
+            states = simulator._solve_states(theta)
+        except Exception:
+            continue
+        predicted_log = np.log(np.clip(states.T.reshape(-1), 1e-10, simulator.max_state))
+        rmse[idx] = float(np.sqrt(np.mean((predicted_log - observed_log) ** 2)))
+    return rmse[np.isfinite(rmse)]
 
 
 def compute_split_rhat(chain: np.ndarray) -> np.ndarray:
@@ -948,7 +1417,7 @@ def plot_reference_posterior_pairs(
     seed: int = 123,
     bins: int = 90,
 ) -> list[Path]:
-    """Plot 2D posterior histograms for two-parameter reference artifacts."""
+    """Plot posterior pair diagnostics for reference artifacts."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -957,7 +1426,8 @@ def plot_reference_posterior_pairs(
     observations, theta_samples, metadata, _ = load_reference_posteriors_hdf5(
         reference_path
     )
-    if theta_samples.shape[2] != 2:
+    theta_dim = theta_samples.shape[2]
+    if theta_dim < 2:
         return []
     reference_path = Path(reference_path)
     if output_dir is None:
@@ -975,38 +1445,39 @@ def plot_reference_posterior_pairs(
 
     problem = str(metadata.get("problem", "reference"))
     theta_true = observations["theta_true"]
-    prior_low = _metadata_prior_bound(metadata, "prior_low", theta_samples)
-    prior_high = _metadata_prior_bound(metadata, "prior_high", theta_samples)
     paths: list[Path] = []
     for obs_idx in range(theta_samples.shape[0]):
-        fig, ax = plt.subplots(figsize=(5.2, 4.6))
-        hist = ax.hist2d(
-            plot_samples[obs_idx, :, 0],
-            plot_samples[obs_idx, :, 1],
-            bins=bins,
-            range=[
-                [prior_low[0], prior_high[0]],
-                [prior_low[1], prior_high[1]],
-            ],
-            cmap="viridis",
-            density=True,
+        fig, axes = plt.subplots(
+            theta_dim - 1,
+            theta_dim - 1,
+            figsize=(3.0 * (theta_dim - 1), 2.8 * (theta_dim - 1)),
+            squeeze=False,
         )
-        fig.colorbar(hist[3], ax=ax, label="density")
-        ax.scatter(
-            theta_true[obs_idx, 0],
-            theta_true[obs_idx, 1],
-            color="C3",
-            marker="x",
-            s=70,
-            linewidths=2.0,
-            label="theta_true",
-        )
-        ax.set_xlim(prior_low[0], prior_high[0])
-        ax.set_ylim(prior_low[1], prior_high[1])
-        ax.set_xlabel("theta[0]")
-        ax.set_ylabel("theta[1]")
-        ax.set_title(f"{problem} reference posterior {obs_idx:02d}")
-        ax.legend(loc="best")
+        for row, dim_y in enumerate(range(1, theta_dim)):
+            for col, dim_x in enumerate(range(theta_dim - 1)):
+                ax = axes[row, col]
+                if dim_x >= dim_y:
+                    ax.axis("off")
+                    continue
+                ax.hist2d(
+                    plot_samples[obs_idx, :, dim_x],
+                    plot_samples[obs_idx, :, dim_y],
+                    bins=bins,
+                    cmap="viridis",
+                    density=True,
+                )
+                ax.scatter(
+                    theta_true[obs_idx, dim_x],
+                    theta_true[obs_idx, dim_y],
+                    color="C3",
+                    marker="x",
+                    s=45,
+                    linewidths=1.6,
+                )
+                ax.set_xlabel(f"theta[{dim_x}]", fontsize=8)
+                ax.set_ylabel(f"theta[{dim_y}]", fontsize=8)
+                ax.tick_params(axis="both", labelsize=7)
+        fig.suptitle(f"{problem} reference posterior pairs {obs_idx:02d}", fontsize=12)
         fig.tight_layout()
         path = output_path / f"{problem}_reference_{obs_idx:02d}_pair.png"
         fig.savefig(path, dpi=180, bbox_inches="tight")
@@ -1079,6 +1550,106 @@ def plot_reference_mcmc_traces(
         fig.suptitle(f"{problem} MCMC trace {obs_idx:02d}", fontsize=12)
         fig.tight_layout(rect=(0, 0, 1, 0.95))
         path = output_path / f"{problem}_reference_{obs_idx:02d}_trace.png"
+        fig.savefig(path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        paths.append(path)
+    return paths
+
+
+def plot_lotka_volterra_reference_predictives(
+    reference_path: str | os.PathLike[str],
+    *,
+    output_dir: str | os.PathLike[str] | None = None,
+    max_samples: int = 500,
+    seed: int = 123,
+) -> list[Path]:
+    """Plot deterministic posterior predictive bands for LV reference posteriors."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    observations, theta_samples, metadata, _ = load_reference_posteriors_hdf5(
+        reference_path
+    )
+    if metadata.get("problem") != "lotka_volterra":
+        return []
+    reference_path = Path(reference_path)
+    if output_dir is None:
+        output_path = reference_path.parent / "plots"
+    else:
+        output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    simulator_metadata = metadata["simulator"]
+    simulator = LotkaVolterraSimulator(
+        num_timepoints=int(simulator_metadata["num_timepoints"]),
+        days=float(simulator_metadata["days"]),
+        observation_noise_scale=float(simulator_metadata["observation_noise_scale"]),
+        initial_state=tuple(simulator_metadata["initial_state"]),
+        prior_log_mean=np.asarray(simulator_metadata["prior_log_mean"], dtype=float),
+        prior_log_std=np.asarray(simulator_metadata["prior_log_std"], dtype=float),
+        max_state=float(simulator_metadata["max_state"]),
+        ode_rtol=float(simulator_metadata["ode_rtol"]),
+        ode_atol=float(simulator_metadata["ode_atol"]),
+    )
+    time = np.asarray(simulator_metadata["timepoints"], dtype=float)
+    rng = np.random.default_rng(seed)
+
+    paths: list[Path] = []
+    for obs_idx in range(theta_samples.shape[0]):
+        samples = theta_samples[obs_idx]
+        if samples.shape[0] > max_samples:
+            sample_idx = rng.choice(samples.shape[0], size=max_samples, replace=False)
+            samples = samples[sample_idx]
+        trajectories = []
+        for theta in samples:
+            try:
+                trajectories.append(simulator._solve_states(theta).T)
+            except Exception:
+                continue
+        if not trajectories:
+            continue
+        trajectories_array = np.stack(trajectories)
+        q05, q50, q95 = np.quantile(trajectories_array, [0.05, 0.5, 0.95], axis=0)
+        observed = observations["x_full"][obs_idx].reshape((-1, 2))
+
+        fig, ax = plt.subplots(figsize=(7.2, 4.4))
+        labels = ("prey", "predator")
+        colors = ("C0", "C2")
+        for population in range(2):
+            ax.fill_between(
+                time,
+                q05[:, population],
+                q95[:, population],
+                color=colors[population],
+                alpha=0.18,
+                label=f"{labels[population]} 90% band",
+            )
+            ax.plot(
+                time,
+                q50[:, population],
+                color=colors[population],
+                linewidth=1.6,
+                label=f"{labels[population]} median",
+            )
+            ax.scatter(
+                time,
+                observed[:, population],
+                color=colors[population],
+                edgecolor="white",
+                linewidth=0.4,
+                s=18,
+                label=f"{labels[population]} observed",
+                zorder=3,
+            )
+        ax.set_yscale("log")
+        ax.set_xlabel("time")
+        ax.set_ylabel("population")
+        ax.set_title(f"lotka_volterra posterior predictive {obs_idx:02d}")
+        ax.legend(fontsize="x-small", ncols=2)
+        fig.tight_layout()
+        path = output_path / f"lotka_volterra_reference_{obs_idx:02d}_predictive.png"
         fig.savefig(path, dpi=180, bbox_inches="tight")
         plt.close(fig)
         paths.append(path)
