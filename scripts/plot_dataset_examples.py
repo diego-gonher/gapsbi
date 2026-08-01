@@ -38,7 +38,10 @@ def main() -> None:
     parser.add_argument("--split", choices=["train", "val", "test"], default="train")
     parser.add_argument("--num-examples", type=int, default=6)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--output", default="outputs/dataset_examples.png")
+    parser.add_argument(
+        "--output",
+        default="outputs_local/data_generation_examples/dataset_examples.png",
+    )
     parser.add_argument("--log-y", action="store_true")
     parser.add_argument("--show", action="store_true")
     parser.add_argument(
