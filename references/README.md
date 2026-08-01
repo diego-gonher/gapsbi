@@ -29,6 +29,23 @@ Once a reference version is used for paper results, treat it as immutable. If th
 simulator or posterior-generation procedure changes, create a new versioned
 directory instead of overwriting old artifacts.
 
+## Current Reference Problems
+
+The main repository `README.md` documents priors for the earlier dataset
+generation setup, including Ricker. The current reference-posterior set is
+focused on GLU, OUP, GLM, and Lotka-Volterra.
+
+| Problem | Parameters | Prior | Default observation | Reference posterior |
+| --- | --- | --- | --- | --- |
+| GLU | `theta[0:10]` | independent `Uniform(-1, 1)` | `x = theta + Normal(0, 0.1)`, `x_dim=10` | analytic truncated Gaussian |
+| OUP | `theta = [theta1, log_theta2]` | `theta1 ~ Uniform(0, 2)`, `log_theta2 ~ Uniform(-2, 2)` | RISE-style OUP path, `n=25`, `T=5`, `var=0.1`, `y0=10` | deterministic grid posterior |
+| GLM | `theta[0:10]` | independent `Uniform(-2, 2)` | raw Bernoulli spike train, `duration=100`, `stimulus_seed=42` | emcee MCMC |
+| Lotka-Volterra | `theta = [alpha, beta, gamma, delta]` | `log(theta) ~ Normal([-0.125, -3.0, -0.125, -3.0], 0.5^2 I)` | interleaved prey/predator series, 50 timestamps over 20 days, lognormal observation noise scale `0.1` | emcee MCMC in log-parameter space |
+
+All reference artifacts store unscaled `theta_true`, unscaled `x_full`, and
+unscaled posterior samples. The HDF5 attributes also store simulator metadata,
+including prior bounds or lognormal prior parameters.
+
 Marginal diagnostic plots can be generated into the versioned artifact directory:
 
 ```bash
