@@ -7,6 +7,7 @@ from gapsbi.masks import (
     LotkaVolterraLogTotalMNARMask,
     LotkaVolterraTimeBlockMCARMask,
     LotkaVolterraTimeMARMask,
+    MeanNormalizedSelfCensoringMNARMask,
     PointMCARMask,
     SelfCensoringMNARMask,
 )
@@ -320,6 +321,53 @@ def test_self_censoring_mnar_metadata_includes_score_transform() -> None:
 def test_self_censoring_mnar_invalid_score_transform_raises() -> None:
     with pytest.raises(ValueError, match="score_transform must be one of"):
         SelfCensoringMNARMask(missing_fraction=0.5, score_transform="sqrt")
+
+
+def test_mean_normalized_self_censoring_mnar_realizes_epsilon_more_closely() -> None:
+    x_full = np.tile(np.linspace(-1.0, 1.0, 10), (20_000, 1))
+    mask = MeanNormalizedSelfCensoringMNARMask(missing_fraction=0.5).generate(
+        x_full,
+        theta=None,
+        rng=np.random.default_rng(123),
+    )
+    missing_rate_by_value = np.mean(mask == 0, axis=0)
+
+    assert np.mean(mask == 0) == pytest.approx(0.5, abs=0.02)
+    assert missing_rate_by_value[-1] > missing_rate_by_value[0]
+    assert missing_rate_by_value[-1] > missing_rate_by_value[2]
+
+
+def test_mean_normalized_self_censoring_mnar_metadata_marks_variant() -> None:
+    metadata = MeanNormalizedSelfCensoringMNARMask(
+        missing_fraction=0.25,
+        score_transform="identity",
+    ).metadata()
+
+    assert metadata["name"] == "self_censoring_mnar_mean_normalized"
+    assert metadata["score"] == "mean_normalized_per_sample_minmax_shift"
+    assert metadata["constant_score"] == 1.0
+
+
+@pytest.mark.parametrize(
+    "simulator",
+    [
+        OUPSimulator(n=12),
+        GLUSimulator(dim=6),
+        GLMSimulator(dim=6, duration=20),
+    ],
+)
+def test_mean_normalized_self_censoring_mnar_is_compatible_with_main_generic_simulators(simulator) -> None:
+    rng = np.random.default_rng(123)
+    theta = simulator.sample_theta(3, rng)
+    x_full = simulator.simulate(theta, rng)
+    mask = MeanNormalizedSelfCensoringMNARMask(missing_fraction=0.5).generate(
+        x_full,
+        theta,
+        rng,
+    )
+
+    assert mask.shape == x_full.shape
+    _assert_binary(mask)
 
 
 def test_coordinate_mar_mask_preserves_unbatched_shape_and_is_binary_int8() -> None:

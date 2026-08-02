@@ -6,7 +6,11 @@ from gapsbi.masks.lv import (
 )
 from gapsbi.masks.mar import CoordinateMARMask
 from gapsbi.masks.mcar import BlockMCARMask, PointMCARMask
-from gapsbi.masks.mnar import SelfCensoringMNARMask, ValueDependentMNARMask
+from gapsbi.masks.mnar import (
+    MeanNormalizedSelfCensoringMNARMask,
+    SelfCensoringMNARMask,
+    ValueDependentMNARMask,
+)
 
 __all__ = [
     "BlockMCARMask",
@@ -15,6 +19,7 @@ __all__ = [
     "LotkaVolterraTimeBlockMCARMask",
     "LotkaVolterraTimeMARMask",
     "MaskGenerator",
+    "MeanNormalizedSelfCensoringMNARMask",
     "PointMCARMask",
     "SelfCensoringMNARMask",
     "ValueDependentMNARMask",

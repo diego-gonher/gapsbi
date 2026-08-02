@@ -13,6 +13,7 @@ from gapsbi.masks import (
     LotkaVolterraLogTotalMNARMask,
     LotkaVolterraTimeBlockMCARMask,
     LotkaVolterraTimeMARMask,
+    MeanNormalizedSelfCensoringMNARMask,
     PointMCARMask,
     SelfCensoringMNARMask,
 )
@@ -49,6 +50,8 @@ def mask_path_components(args: argparse.Namespace) -> tuple[str, str]:
         return "mar", f"time_mar_{args.mar_mode}"
     if args.mask == "self_censoring_mnar":
         return "mnar", f"mnar_self_censoring_{args.mnar_score_transform}"
+    if args.mask == "self_censoring_mnar_mean_normalized":
+        return "mnar", f"mnar_self_censoring_mean_normalized_{args.mnar_score_transform}"
     return "mnar", "log_total_mnar"
 
 
@@ -86,6 +89,7 @@ def main() -> None:
             "point_mcar",
             "block_mcar",
             "self_censoring_mnar",
+            "self_censoring_mnar_mean_normalized",
             "coordinate_mar",
             "lv_time_block_mcar",
             "lv_time_mar",
@@ -183,6 +187,11 @@ def main() -> None:
         )
     elif args.mask == "self_censoring_mnar":
         mask_generator = SelfCensoringMNARMask(
+            missing_fraction=args.missing_fraction,
+            score_transform=args.mnar_score_transform,
+        )
+    elif args.mask == "self_censoring_mnar_mean_normalized":
+        mask_generator = MeanNormalizedSelfCensoringMNARMask(
             missing_fraction=args.missing_fraction,
             score_transform=args.mnar_score_transform,
         )

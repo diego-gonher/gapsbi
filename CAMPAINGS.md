@@ -1,11 +1,11 @@
-# Campaign 1 — Simple, Cheap, Reproducible Baselines
+# Experiment Plan
 
 Problems:
 
 * OUP
 * GLM
 * GLU
-* Ricker
+* LV
 
 Missingness:
 
@@ -19,146 +19,30 @@ Fractions:
 * 25%
 * 50%
 
+Five Training Seeds:
+* 101
+* 202
+* 303
+* 404
+* 505
+
 Methods:
 
 1. Full-data NPE
-2. Zero-imputation NPE
-3. Mean-imputation NPE
-4. Mean-imputation + mask augmentation
+2. Mean-imputation NPE
+3. Mean-imputation + mask augmentation NPE
+4. Learned Imputation with NPE
+5. RISE based NPE
+6. Transfomer Embeddings with NPE
 
 Simulation budgets:
 
-* `full_sim_budget`: 45k train / 5k validation / 1k test, with outputs under `outputs/` unless a config explicitly uses another full-budget root.
-* `low_sim_budget`: 4.5k train / 500 validation / full 1k test, with outputs under `outputs_low_sim_budget/`.
+* `high_sim_budget`: 90k train / 10k validation / 1k test, with outputs under `outputs_high_sim_budget/` unless a config explicitly uses another full-budget root.
+* `mid_sim_budget`: 9k train / 1k validation / 1k test, with outputs under `outputs_mid_sim_budget/` unless a config explicitly uses another full-budget root.
+* `low_sim_budget`: 0.9k train / 0.1k validation / full 1k test, with outputs under `outputs_low_sim_budget/`.
 
-This is excellent because:
-
-* everything is easy to reproduce,
-* mostly pure `sbi`,
-* very low engineering burden,
-* gives immediate benchmark value,
-* establishes calibration baselines.
-
-This alone is already publishable as a benchmark/data paper if done cleanly.
-
-Especially because:
-
-* almost nobody evaluates SBI missing-data methods systematically with SBC/TARP,
-* almost nobody compares MCAR/MAR/MNAR carefully,
-* many papers only show posterior samples visually.
-
-So even Campaign 1 has real value.
-
----
-
-# Campaign 2 — Representation Learning Methods
-
-Methods:
-5. Learned-imputation + mask (Lueckmann-style)
-6. RISE
-7. Transformer embedding + NPE
-
-Same 4 core problems.
-
-This is the correct place for them because:
-
-* now you already have calibration baselines,
-* now the question becomes:
-
-  “Do learned representations actually help?”
-
-instead of:
-
-“Can we even benchmark missing-data SBI?”
-
-Very important distinction.
-
-Also:
-
-* this isolates the computational cost discussion,
-* lets you quantify calibration-vs-compute tradeoffs,
-* avoids exploding complexity early.
-
-And honestly, the transformer method may become one of the strongest results in the paper if:
-
-* it is simpler than RISE,
-* cheaper than RISE,
-* and calibration is competitive.
-
-That is very plausible.
-
----
-
-# Campaign 3 — Hard / Structured Scientific Problems
-
-Problems:
-
-* Spatial SIR
-* Hodgkin–Huxley
-
-Methods:
-all previous methods.
-
-This is where the benchmark becomes much more convincing scientifically.
-
-Because then you can show:
-
-* low-dimensional smooth problems,
-* nonlinear chaotic-ish problems,
-* neuroscience-style problems,
-* spatially structured problems.
-
-At this stage, reviewers stop seeing it as:
-
-> “toy benchmark paper”
-
-and start seeing:
-
-> “this is becoming a standard SBI missing-data benchmark suite.”
-
-Very important transition.
-
----
-
-# Campaign 4 — Simformer
-
-This is smart because Simformer is:
-
-* expensive,
-* operationally heavier,
-* likely more fragile,
-* harder to tune fairly.
-
-So delaying it is the correct decision.
-
-Also:
-Simformer becomes MUCH more meaningful once:
-
-* you already have calibrated baselines,
-* compute measurements,
-* standardized datasets,
-* established diagnostics.
-
-Then you can ask:
-
-> “Does a large generative foundation-style SBI model actually outperform simpler specialized methods under missingness?”
-
-That is a strong paper question.
-
----
-
-The really important thing is that your campaigns are now:
-
-* modular,
-* publishable independently,
-* incrementally extensible,
-* easy to parallelize later with collaborators.
-
-That is exactly how benchmark projects survive long-term instead of collapsing under scope.
-
-Also, strategically:
-Campaign 1 alone is feasible locally on your MacBook.
-Campaign 2 maybe partly local + cluster.
-Campaigns 3–4 are where collaborators/compute become useful.
-
-That is a very healthy scaling path.
+Metrics to use:
+* C2ST on the 10 high quality reference posteriors. This is a standard metric.
+* Mean shift with the 10 reference posteriors. This is to measure any biases. 
+* Covariance trace ratio with the 10 reference posteriors. This is to measure posterior broadening.
+* TARP on a set of 1000 synthetic observations. This is to measure global posterior calibration.

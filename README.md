@@ -61,15 +61,15 @@ Implemented evaluation and analysis:
 - Per-seed posterior sampling
 - TARP calibration diagnostics
 - SBC rank diagnostics
-- Campaign 1 result aggregation
+- Benchmark result aggregation
 - Full-data seed diagnostics
 - MMD and C2ST posterior shift metrics
 - Per-observation posterior shift metrics
 - Dataset characterization diagnostics
 
-## Campaign 1
+## Benchmark V1
 
-Campaign 1 is the main completed baseline campaign for cheap, reproducible missing-data SBI comparisons.
+Benchmark V1 is the main missing-data SBI comparison suite.
 
 Problems:
 
@@ -101,12 +101,16 @@ Methods:
 - Learned-imputation NPE
 - GAPSBI-native RISE-style probabilistic imputation + NPE
 
-Each configuration uses 10 fixed random seeds. Campaign 1 is organized into simulation-budget-specific config trees:
+The current experiment plan uses five fixed training seeds and three nested
+simulation-budget regimes over the same canonical HDF5 datasets:
 
-- `full_sim_budget`: the canonical 45k train / 5k validation / 1k test setup.
-- `low_sim_budget`: a 4.5k train / 500 validation ablation using the same HDF5 datasets and full test split.
+- `high_sim_budget`: 90k train / 10k validation / 1k test.
+- `mid_sim_budget`: 9k train / 1k validation / full 1k test, using train/validation subsets.
+- `low_sim_budget`: 900 train / 100 validation / full 1k test, using train/validation subsets.
 
-Full-budget runs write under `outputs/` unless a config explicitly uses another full-budget root. Low-budget runs write under `outputs_low_sim_budget/` so ablations do not mix with full-budget results.
+Budget-specific runs should write to separate output roots such as
+`outputs_high_sim_budget/`, `outputs_mid_sim_budget/`, and
+`outputs_low_sim_budget/`.
 
 ## Implemented Simulators
 
@@ -247,6 +251,7 @@ Implemented MAR masks:
 Implemented MNAR masks:
 
 - `SelfCensoringMNARMask`: value-dependent self-censoring. Each sample is optionally transformed, min/max shifted into `[0, 1]`, then higher normalized values receive higher missingness probability. Constant samples use score `0.5` everywhere to avoid division instability.
+- `MeanNormalizedSelfCensoringMNARMask`: value-dependent self-censoring with the same min/max score, then per-sample mean normalization before applying the missingness fraction. This is the default generic MNAR mask for benchmark V1 because realized missingness is closer to the requested fraction.
 - `LotkaVolterraLogTotalMNARMask`: timestamp-level LV MNAR masking based on `log(prey_t + predator_t)`, with the same mask applied to both populations at a timestamp.
 
 `SelfCensoringMNARMask` supports `score_transform`:
@@ -293,12 +298,12 @@ Metadata is stored as file-level HDF5 attributes. Nested simulator and mask meta
 
 ## Canonical Dataset Configuration
 
-The current Campaign 1 canonical dataset split is:
+The current benchmark V1 canonical dataset split is:
 
 | Split | Size |
 | --- | ---: |
-| Train | 45,000 |
-| Validation | 5,000 |
+| Train | 90,000 |
+| Validation | 10,000 |
 | Test | 1,000 |
 
 Other constants:
@@ -308,19 +313,21 @@ Other constants:
 - OUP/GLU/GLM masks:
   - MCAR: `point_mcar`
   - MAR: `coordinate_mar`, `mar-mode=increasing`
-  - MNAR: `identity` self-censoring
+  - MNAR: mean-normalized `identity` self-censoring
 - Lotka-Volterra masks:
   - MCAR: `lv_time_block_mcar`, `block-size=5`
   - MAR: `lv_time_mar`, `mar-mode=increasing`
   - MNAR: `lv_log_total_mnar`
 
-Generate Campaign 1 canonical datasets with:
+Generate benchmark V1 canonical datasets with:
 
 ```bash
-bash scripts/generate_campaign1_45k_datasets.sh
+bash scripts/generate_benchmark_v1_datasets.sh
 ```
 
-The repository also contains older/reference generation commands for larger `90k / 10k / 1k` datasets. Treat those as archival or extended-size runs unless you intentionally want the larger split.
+Mid- and low-budget experiments should reuse these HDF5 files and subset only the
+train/validation splits in experiment configs. This keeps the full 1k test split
+matched across budget ablations.
 
 Toy examples below use smaller split sizes for quick local testing.
 
@@ -387,9 +394,9 @@ PYTHONPATH=src python scripts/generate_dataset.py \
   --task glu \
   --dim 10 \
   --simulator-scale 0.1 \
-  --mask self_censoring_mnar \
+  --mask self_censoring_mnar_mean_normalized \
   --missing-fraction 0.25 \
-  --output data/glu_self_censoring_mnar_25.h5 \
+  --output data/glu_self_censoring_mean_normalized_mnar_25.h5 \
   --overwrite
 ```
 
@@ -447,7 +454,7 @@ PYTHONPATH=src python scripts/generate_dataset.py \
 Supported generation options:
 
 - `--task {ricker,oup,glu,glm,spatial_sir,hodgkin_huxley,lotka_volterra}`
-- `--mask {point_mcar,block_mcar,self_censoring_mnar,coordinate_mar,lv_time_block_mcar,lv_time_mar,lv_log_total_mnar}`
+- `--mask {point_mcar,block_mcar,self_censoring_mnar,self_censoring_mnar_mean_normalized,coordinate_mar,lv_time_block_mcar,lv_time_mar,lv_log_total_mnar}`
 - `--missing-fraction`
 - `--block-size`
 - `--mar-mode {increasing,decreasing,middle}`
@@ -513,6 +520,18 @@ This produces summaries and plots for:
 - missingness rates and missingness vs observation value
 - `x_full` observation distributions
 - theta-observation correlation heatmaps
+
+Run lightweight mask-information diagnostics over generated benchmark datasets:
+
+```bash
+PYTHONPATH=src python scripts/diagnose_mask_information.py \
+  data/canonical_v1/glu/mnar/glu_mnar_self_censoring_mean_normalized_identity_eps025_seed123.h5 \
+  --sample-size 1000
+```
+
+For each dataset this writes `mask_information/` plots next to the dataset
+generation diagnostics and updates
+`outputs/dataset_generation_diagnostics/mask_information_summary.csv`.
 
 ## Baseline Experiments
 
@@ -670,7 +689,10 @@ PYTHONPATH=src python experiments/npe_rise/train.py \
 
 Posterior shift is computed from existing `posterior_samples.h5` files and does not retrain models.
 
-## Campaign 1 Analysis Scripts
+## Benchmark Analysis Scripts
+
+Some analysis scripts still use legacy `campaign1` filenames. They are retained
+for compatibility with existing experiment outputs.
 
 Aggregate seed-level experiment outputs:
 
@@ -803,7 +825,7 @@ The test suite covers:
 - preprocessing/scaling helpers
 - posterior sampling, SBC, and TARP helpers
 - NPE helper wiring without slow training
-- Campaign 1 aggregation and stability analysis
+- Benchmark aggregation and stability analysis
 - posterior shift and moment-shift metric helpers and analysis scripts
 
 Run tests with:
@@ -824,12 +846,13 @@ experiments/
   npe_masked_embedding/          # Masked pooling/attention embedding NPE baselines
   npe_learned_imputation/        # Learned-imputation baseline
   npe_rise/                      # GAPSBI-native RISE-style imputation + NPE
-outputs/                         # Campaign outputs and analysis products
-outputs_low_sim_budget/          # Low simulation-budget campaign outputs
+outputs_high_sim_budget/         # High simulation-budget outputs
+outputs_mid_sim_budget/          # Mid simulation-budget outputs
+outputs_low_sim_budget/          # Low simulation-budget outputs
 outputs_local/                   # Local exploratory outputs
 scripts/
   generate_dataset.py
-  generate_campaign1_45k_datasets.sh
+  generate_benchmark_v1_datasets.sh
   plot_dataset_examples.py
   diagnose_dataset.py
   aggregate_campaign1_results.py

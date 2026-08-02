@@ -92,3 +92,31 @@ class SelfCensoringMNARMask(MaskGenerator):
 
 
 ValueDependentMNARMask = SelfCensoringMNARMask
+
+
+class MeanNormalizedSelfCensoringMNARMask(SelfCensoringMNARMask):
+    """Value-dependent MNAR self-censoring with mean-normalized scores.
+
+    The base self-censoring mask uses p_i = epsilon * s_i, where s_i is the
+    per-sample min/max-normalized score. This variant rescales scores by their
+    sample mean before applying epsilon, making the realized missing fraction
+    much closer to epsilon while preserving value-dependent censoring.
+    """
+
+    @property
+    def name(self) -> str:
+        return "self_censoring_mnar_mean_normalized"
+
+    def metadata(self) -> dict[str, Any]:
+        metadata = super().metadata()
+        metadata["name"] = self.name
+        metadata["score"] = "mean_normalized_per_sample_minmax_shift"
+        metadata["constant_score"] = 1.0
+        return metadata
+
+    def _score_one(self, x: np.ndarray) -> np.ndarray:
+        score = super()._score_one(x)
+        score_mean = np.mean(score)
+        if score_mean < self.eps:
+            return np.ones_like(score, dtype=float)
+        return score / (score_mean + self.eps)
