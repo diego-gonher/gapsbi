@@ -32,6 +32,7 @@ from gapsbi.preprocessing.scalers import (
     theta_scaling_metadata,
 )
 from gapsbi.references import load_reference_posteriors_hdf5
+from gapsbi.simulators import GLMSimulator, LotkaVolterraSimulator
 from gapsbi.utils.seeding import set_all_seeds
 
 matplotlib.use("Agg")
@@ -160,6 +161,34 @@ def _scale_x_full_with_fitted_scaler(
             f"got {transform!r}."
         )
     return torch.tensor(x_scaler.transform(features), dtype=torch.float32)
+
+
+def sample_tarp_references(
+    *,
+    problem: str,
+    num_references: int,
+    seed: int,
+    scaled_prior: torch.distributions.Distribution,
+    theta_scaler: Any,
+    config: dict[str, Any],
+) -> torch.Tensor:
+    """Sample TARP reference points in the same scaled coordinates as theta_eval."""
+    if problem == "glm":
+        rng = np.random.default_rng(seed)
+        theta = GLMSimulator(
+            dim=int(config.get("glm_dim", 10)),
+            duration=int(config.get("glm_duration", 100)),
+            summary=str(config.get("glm_summary", "raw")),
+        ).sample_theta(num_references, rng)
+        return torch.tensor(theta_scaler.transform(theta), dtype=torch.float32)
+
+    if problem == "lotka_volterra":
+        rng = np.random.default_rng(seed)
+        theta = LotkaVolterraSimulator().sample_theta(num_references, rng)
+        return torch.tensor(theta_scaler.transform(theta), dtype=torch.float32)
+
+    set_all_seeds(seed)
+    return scaled_prior.sample((num_references,)).detach().cpu()
 
 
 def main() -> None:
@@ -357,8 +386,14 @@ def main() -> None:
         # Time diagnostics: TARP/SBC computations and diagnostic artifacts.
         diagnostics_start = time.perf_counter()
 
-        set_all_seeds(seed + 20_000)
-        references = prior.sample((test_sample,)).detach().cpu()
+        references = sample_tarp_references(
+            problem=problem,
+            num_references=test_sample,
+            seed=seed + 20_000,
+            scaled_prior=prior,
+            theta_scaler=theta_scaler,
+            config=config,
+        )
         ecp, alpha, tarp_probs = compute_tarp_from_samples(
             posterior_samples=posterior_samples_scaled,
             theta_eval=theta_eval,
@@ -435,6 +470,12 @@ def main() -> None:
             "fallback_sampling_used": bool(fallback_sampling_used),
             "tarp_atc": float(atc),
             "tarp_ks_pvalue": float(ks_pval),
+            "tarp_reference_space": "theta_scaled",
+            "tarp_reference_distribution": (
+                "true_simulator_prior_scaled"
+                if problem in {"glm", "lotka_volterra"}
+                else "scaled_npe_prior"
+            ),
             "num_tarp_eval": int(test_sample),
             "num_tarp_posterior_samples": int(num_posterior_samples),
             "num_sbc_eval": int(test_sample),
