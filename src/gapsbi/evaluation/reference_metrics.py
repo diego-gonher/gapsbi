@@ -23,17 +23,18 @@ def c2st_accuracy(
     *,
     seed: int = 1,
     test_size: float | None = None,
-    n_folds: int = 5,
+    n_folds: int = 3,
+    hidden_layer_scale: int = 5,
     z_score: bool = True,
     noise_scale: float | None = None,
     max_iter: int = 10_000,
 ) -> float:
     """SBIBM-style classifier two-sample test accuracy.
 
-    By default this follows ``sbibm.metrics.c2st``: z-score using the first
-    sample set, train an MLP with two ``10 * dim`` hidden layers, and report
-    mean 5-fold cross-validation accuracy. If ``test_size`` is provided, a
-    single stratified train/test split is used instead.
+    This follows the SBIBM structure: z-score using the first sample set, train
+    an MLP with two hidden layers scaled by theta dimension, and report mean
+    cross-validation accuracy. The default hidden-layer scale and folds are
+    reduced from SBIBM's heavier setting for benchmark throughput.
     """
     x_arr, y_arr = validate_sample_pair(x, y)
     if x_arr.shape[0] < 2 or y_arr.shape[0] < 2:
@@ -55,7 +56,12 @@ def c2st_accuracy(
     labels = np.concatenate(
         (np.zeros(x_arr.shape[0], dtype=int), np.ones(y_arr.shape[0], dtype=int))
     )
-    classifier = make_c2st_classifier(theta_dim=x_arr.shape[1], seed=seed, max_iter=max_iter)
+    classifier = make_c2st_classifier(
+        theta_dim=x_arr.shape[1],
+        seed=seed,
+        max_iter=max_iter,
+        hidden_layer_scale=hidden_layer_scale,
+    )
 
     if test_size is not None:
         x_train, x_test, y_train, y_test = train_test_split(
@@ -80,12 +86,20 @@ def c2st_accuracy(
     return float(np.asarray(scores, dtype=np.float64).mean())
 
 
-def make_c2st_classifier(*, theta_dim: int, seed: int, max_iter: int) -> MLPClassifier:
+def make_c2st_classifier(
+    *,
+    theta_dim: int,
+    seed: int,
+    max_iter: int,
+    hidden_layer_scale: int,
+) -> MLPClassifier:
     if theta_dim <= 0:
         raise ValueError(f"theta_dim must be positive, got {theta_dim}.")
+    if hidden_layer_scale <= 0:
+        raise ValueError(f"hidden_layer_scale must be positive, got {hidden_layer_scale}.")
     return MLPClassifier(
         activation="relu",
-        hidden_layer_sizes=(10 * theta_dim, 10 * theta_dim),
+        hidden_layer_sizes=(hidden_layer_scale * theta_dim, hidden_layer_scale * theta_dim),
         max_iter=int(max_iter),
         solver="adam",
         random_state=int(seed),
@@ -117,9 +131,12 @@ def compute_reference_metrics(
     *,
     seed: int = 1,
     max_samples_per_observation: int | None = 10_000,
+    c2st_max_samples_per_observation: int | None = 2_000,
     c2st_test_size: float | None = None,
-    c2st_n_folds: int = 5,
+    c2st_n_folds: int = 3,
+    c2st_hidden_layer_scale: int = 5,
     c2st_max_iter: int = 10_000,
+    progress: bool = False,
 ) -> list[dict[str, Any]]:
     """Compute reference metrics separately for each reference observation."""
     estimator = validate_posterior_array(estimator_samples, "estimator_samples")
@@ -137,22 +154,55 @@ def compute_reference_metrics(
         estimator_obs = subsample_rows(estimator[obs_idx], sample_count, rng)
         reference_obs = subsample_rows(reference[obs_idx], sample_count, rng)
 
+        c2st_sample_count = sample_count
+        if c2st_max_samples_per_observation is not None:
+            if c2st_max_samples_per_observation < 2:
+                raise ValueError("c2st_max_samples_per_observation must be at least 2.")
+            c2st_sample_count = min(c2st_sample_count, int(c2st_max_samples_per_observation))
+        c2st_rng = np.random.default_rng(seed + 100_000 + obs_idx)
+        estimator_c2st = subsample_rows(estimator[obs_idx], c2st_sample_count, c2st_rng)
+        reference_c2st = subsample_rows(reference[obs_idx], c2st_sample_count, c2st_rng)
+
+        if progress:
+            print(
+                "reference "
+                f"{obs_idx + 1}/{estimator.shape[0]}: computing metrics "
+                f"(C2ST samples={c2st_sample_count}, moment samples={sample_count})",
+                flush=True,
+            )
+
+        c2st_value = c2st_accuracy(
+            reference_c2st,
+            estimator_c2st,
+            seed=seed + obs_idx,
+            test_size=c2st_test_size,
+            n_folds=c2st_n_folds,
+            hidden_layer_scale=c2st_hidden_layer_scale,
+            max_iter=c2st_max_iter,
+        )
+        mean_shift_value = posterior_mean_shift(estimator_obs, reference_obs)
+        trace_ratio_value = covariance_trace_ratio(estimator_obs, reference_obs)
+        if progress:
+            print(
+                "reference "
+                f"{obs_idx + 1}/{estimator.shape[0]}: done "
+                f"c2st={c2st_value:.4f}, "
+                f"mean_shift={mean_shift_value:.4g}, "
+                f"trace_ratio={trace_ratio_value:.4g}",
+                flush=True,
+            )
         row = {
             "reference_index": obs_idx,
             "theta_dim": int(estimator.shape[2]),
             "num_estimator_samples_total": int(estimator.shape[1]),
             "num_reference_samples_total": int(reference.shape[1]),
             "num_samples_used": int(sample_count),
-            "c2st_accuracy": c2st_accuracy(
-                reference_obs,
-                estimator_obs,
-                seed=seed + obs_idx,
-                test_size=c2st_test_size,
-                n_folds=c2st_n_folds,
-                max_iter=c2st_max_iter,
-            ),
-            "posterior_mean_shift": posterior_mean_shift(estimator_obs, reference_obs),
-            "covariance_trace_ratio": covariance_trace_ratio(estimator_obs, reference_obs),
+            "c2st_num_samples_used": int(c2st_sample_count),
+            "c2st_n_folds": int(c2st_n_folds),
+            "c2st_hidden_layer_scale": int(c2st_hidden_layer_scale),
+            "c2st_accuracy": c2st_value,
+            "posterior_mean_shift": mean_shift_value,
+            "covariance_trace_ratio": trace_ratio_value,
         }
         rows.append(row)
     return rows

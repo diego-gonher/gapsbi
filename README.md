@@ -565,6 +565,8 @@ Uses `x_full` only and serves as the reference no-missingness baseline.
 The configured full-data runs also sample 10,000 posterior draws on the ten fixed
 reference observations and compute per-reference C2ST, posterior mean shift, and
 covariance trace ratio against the high-quality reference posterior samples.
+C2ST defaults to 2,000 matched samples per reference, 3-fold CV, and an MLP with
+two hidden layers of width `5 * theta_dim`.
 
 ```bash
 PYTHONPATH=src python experiments/npe_full_data/train.py \
@@ -686,7 +688,7 @@ PYTHONPATH=src python experiments/npe_rise/train.py \
 
 ### Posterior Shift
 
-- **C2ST**: classifier two-sample test accuracy. The reference-metric implementation follows the SBIBM-style MLP classifier with 5-fold cross-validation, comparing estimator posterior samples to high-quality reference posterior samples. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger discrepancy.
+- **C2ST**: classifier two-sample test accuracy. The reference-metric implementation follows the SBIBM-style MLP classifier structure, comparing estimator posterior samples to high-quality reference posterior samples. The benchmark default uses 2,000 matched samples, 3-fold cross-validation, and two hidden layers of width `5 * theta_dim` for runtime. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger discrepancy.
 - **Euclidean posterior mean shift**: Euclidean distance between posterior means. This is a simple location-shift diagnostic.
 - **Covariance trace ratio**: ratio of estimator posterior covariance trace to reference posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average; values below `1` indicate contraction.
 

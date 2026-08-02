@@ -6,6 +6,10 @@ max_train_samples: 900
 max_val_samples: 100
 reference_path: references/reference_posteriors_v1/glu_references.h5
 reference_num_posterior_samples: 10000
+reference_metrics:
+  c2st_max_samples_per_observation: 2000
+  c2st_n_folds: 3
+  c2st_hidden_layer_scale: 5
 
 npe:
   density_estimator: nsf

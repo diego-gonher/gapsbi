@@ -20,6 +20,9 @@ using reusable package utilities under `src/gapsbi`.
   observations when `reference_path` is configured.
 - Computes per-reference C2ST, posterior mean shift, and covariance trace ratio
   against the high-quality reference posterior samples.
+  C2ST uses 2,000 matched samples per reference by default, 3-fold CV, and an
+  MLP with two hidden layers of width `5 * theta_dim`; these are configurable
+  under `reference_metrics`.
 
 ## Run
 
@@ -50,6 +53,7 @@ For each seed under `output_dir/seed_<seed>/`:
   - `reference_c2st_accuracy`
   - `reference_posterior_mean_shift`
   - `reference_covariance_trace_ratio`
+  - C2ST settings and sample counts
 
 At the root `output_dir/`:
 

@@ -211,6 +211,15 @@ def main() -> None:
             eval_cfg.get("reference_num_posterior_samples", eval_cfg["num_posterior_samples"]),
         )
     )
+    reference_metrics_cfg = config.get("reference_metrics", {})
+    c2st_max_samples_per_observation = reference_metrics_cfg.get(
+        "c2st_max_samples_per_observation", 2_000
+    )
+    if c2st_max_samples_per_observation is not None:
+        c2st_max_samples_per_observation = int(c2st_max_samples_per_observation)
+    c2st_n_folds = int(reference_metrics_cfg.get("c2st_n_folds", 3))
+    c2st_hidden_layer_scale = int(reference_metrics_cfg.get("c2st_hidden_layer_scale", 5))
+    c2st_max_iter = int(reference_metrics_cfg.get("c2st_max_iter", 10_000))
     reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
     max_sampling_time = sampling_cfg.get("max_sampling_time", None)
     if max_sampling_time is not None:
@@ -563,6 +572,11 @@ def main() -> None:
                 reference_samples=ref_theta_samples,
                 seed=seed + 40_000,
                 max_samples_per_observation=num_ref_samples,
+                c2st_max_samples_per_observation=c2st_max_samples_per_observation,
+                c2st_n_folds=c2st_n_folds,
+                c2st_hidden_layer_scale=c2st_hidden_layer_scale,
+                c2st_max_iter=c2st_max_iter,
+                progress=True,
             )
             reference_metrics_time_sec = time.perf_counter() - reference_metrics_start
 
@@ -581,6 +595,12 @@ def main() -> None:
                     "reference_metrics_num_samples_used": [
                         int(row["num_samples_used"]) for row in reference_metric_rows
                     ],
+                    "reference_metrics_c2st_num_samples_used": [
+                        int(row["c2st_num_samples_used"]) for row in reference_metric_rows
+                    ],
+                    "reference_metrics_c2st_n_folds": int(c2st_n_folds),
+                    "reference_metrics_c2st_hidden_layer_scale": int(c2st_hidden_layer_scale),
+                    "reference_metrics_c2st_max_iter": int(c2st_max_iter),
                     "reference_metrics_reference_index": [
                         int(row["reference_index"]) for row in reference_metric_rows
                     ],
