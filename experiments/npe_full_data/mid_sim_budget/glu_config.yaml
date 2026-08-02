@@ -1,10 +1,10 @@
-dataset_path: data/canonical_v1/glm/mcar/glm_raw_mcar_eps010_seed123.h5
-problem: glm
-output_dir: outputs_low_sim_budget/npe_full_data/glm_full_data
+dataset_path: data/canonical_v1/glu/mcar/glu_mcar_eps010_seed123.h5
+problem: glu
+output_dir: outputs_mid_sim_budget/npe_full_data/glu_full_data
 seeds: [101, 202, 303, 404, 505]
-max_train_samples: 900
-max_val_samples: 100
-reference_path: references/reference_posteriors_v1/glm_references.h5
+max_train_samples: 9000
+max_val_samples: 1000
+reference_path: references/reference_posteriors_v1/glu_references.h5
 reference_num_posterior_samples: 10000
 
 npe:

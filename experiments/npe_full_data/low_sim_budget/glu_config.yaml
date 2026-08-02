@@ -1,9 +1,11 @@
 dataset_path: data/canonical_v1/glu/mcar/glu_mcar_eps010_seed123.h5
 problem: glu
 output_dir: outputs_low_sim_budget/npe_full_data/glu_full_data
-seeds: [26485, 976532, 1172401, 512417, 8991732, 314159, 271828, 161803, 141421, 173205]
-max_train_samples: 4500
-max_val_samples: 500
+seeds: [101, 202, 303, 404, 505]
+max_train_samples: 900
+max_val_samples: 100
+reference_path: references/reference_posteriors_v1/glu_references.h5
+reference_num_posterior_samples: 10000
 
 npe:
   density_estimator: nsf

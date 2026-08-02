@@ -3,7 +3,7 @@ set -u
 set -o pipefail
 
 METHOD="npe_full_data"
-BUDGET="low_sim_budget"
+BUDGET="mid_sim_budget"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"

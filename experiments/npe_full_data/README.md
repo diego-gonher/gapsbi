@@ -16,11 +16,22 @@ using reusable package utilities under `src/gapsbi`.
 - Builds a scaled-space Gaussian prior with empirical train covariance for GLM/Lotka-Volterra and `BoxUniform([-1, 1]^d)` for bounded-prior tasks.
 - Runs NPE training/evaluation for each configured seed.
 - Saves posterior samples, TARP/SBC diagnostics, and summary JSONs.
+- Optionally samples the trained posterior on the ten fixed reference
+  observations when `reference_path` is configured.
 
 ## Run
 
 ```bash
-python experiments/npe_full_data/train.py --config experiments/npe_full_data/config.yaml
+python experiments/npe_full_data/train.py \
+  --config experiments/npe_full_data/low_sim_budget/oup_config.yaml
+```
+
+Queue scripts are available for the three budget regimes:
+
+```bash
+bash experiments/npe_full_data/npe_full_data_run_queue_high_sim_budget.sh
+bash experiments/npe_full_data/npe_full_data_run_queue_mid_sim_budget.sh
+bash experiments/npe_full_data/npe_full_data_run_queue_low_sim_budget.sh
 ```
 
 ## Outputs
@@ -29,6 +40,7 @@ For each seed under `output_dir/seed_<seed>/`:
 
 - `training_summary.png`
 - `posterior_samples.h5`
+- `reference_posterior_samples.h5` when `reference_path` is configured
 - `tarp.png`
 - `sbc_rank_histograms.png`
 - `diagnostics_arrays.npz`

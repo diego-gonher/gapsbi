@@ -31,6 +31,7 @@ from gapsbi.preprocessing.scalers import (
     scale_x_train_val_test,
     theta_scaling_metadata,
 )
+from gapsbi.references import load_reference_posteriors_hdf5
 from gapsbi.utils.seeding import set_all_seeds
 
 matplotlib.use("Agg")
@@ -140,6 +141,27 @@ def _count_trainable_parameters(module: Any) -> int:
     return int(sum(p.numel() for p in module.parameters() if p.requires_grad))
 
 
+def _scale_x_full_with_fitted_scaler(
+    x_full: np.ndarray,
+    *,
+    x_scaler: Any,
+    transform: str,
+) -> torch.Tensor:
+    features = np.asarray(x_full)
+    if transform == "standard":
+        pass
+    elif transform == "log1p_standard":
+        if np.any(features < 0):
+            raise ValueError("log1p_standard requires nonnegative x_full values.")
+        features = np.log1p(features)
+    else:
+        raise ValueError(
+            "Invalid transform. Expected one of {'standard', 'log1p_standard'}, "
+            f"got {transform!r}."
+        )
+    return torch.tensor(x_scaler.transform(features), dtype=torch.float32)
+
+
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
@@ -152,6 +174,13 @@ def main() -> None:
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
     sampling_cfg = config.get("sampling", {})
+    reference_path = config.get("reference_path")
+    reference_num_posterior_samples = int(
+        config.get(
+            "reference_num_posterior_samples",
+            eval_cfg.get("reference_num_posterior_samples", eval_cfg["num_posterior_samples"]),
+        )
+    )
     reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
     max_sampling_time = sampling_cfg.get("max_sampling_time", None)
     if max_sampling_time is not None:
@@ -417,6 +446,81 @@ def main() -> None:
             "sbc_plot_path": str(sbc_plot_path),
             "diagnostics_arrays_path": str(diagnostics_arrays_path),
         }
+
+        reference_sampling_time_sec: float | None = None
+        reference_posterior_samples_path: Path | None = None
+        reference_num_sampling_failures: int | None = None
+        reference_num_sampling_fallbacks: int | None = None
+        reference_fallback_sampling_used: bool | None = None
+        if reference_path:
+            ref_observations, _ref_theta_samples, ref_metadata, _ref_diagnostics = (
+                load_reference_posteriors_hdf5(reference_path)
+            )
+            if str(ref_metadata.get("problem", "")).lower() != problem:
+                raise ValueError(
+                    f"Reference problem {ref_metadata.get('problem')!r} does not "
+                    f"match config problem {problem!r}."
+                )
+
+            x_ref = _scale_x_full_with_fitted_scaler(
+                ref_observations["x_full"],
+                x_scaler=x_scaler,
+                transform=x_transform,
+            )
+
+            reference_sampling_start = time.perf_counter()
+            (
+                reference_samples_scaled,
+                reference_num_sampling_failures,
+                reference_num_sampling_fallbacks,
+                reference_fallback_sampling_used,
+            ) = sample_posteriors_once(
+                posterior=posterior,
+                x_eval=x_ref,
+                num_posterior_samples=reference_num_posterior_samples,
+                seed=seed + 30_000,
+                reject_outside_prior=reject_outside_prior,
+                max_sampling_time=max_sampling_time,
+                return_num_sampling_failures=True,
+            )
+            reference_sampling_end = time.perf_counter()
+            reference_sampling_time_sec = reference_sampling_end - reference_sampling_start
+
+            reference_samples_scaled_np = reference_samples_scaled.detach().cpu().numpy()
+            num_ref_eval, num_ref_samples, ref_theta_dim = reference_samples_scaled_np.shape
+            reference_samples_np = theta_scaler.inverse_transform(
+                reference_samples_scaled_np.reshape(-1, ref_theta_dim)
+            ).reshape(num_ref_eval, num_ref_samples, ref_theta_dim)
+
+            reference_posterior_samples_path = seed_output_dir / "reference_posterior_samples.h5"
+            with h5py.File(reference_posterior_samples_path, "w") as f:
+                f.create_dataset("theta_true", data=ref_observations["theta_true"])
+                f.create_dataset("x_full", data=ref_observations["x_full"])
+                f.create_dataset("theta_posterior", data=reference_samples_np)
+                f.create_dataset("theta_posterior_scaled", data=reference_samples_scaled_np)
+                f.attrs["dataset_path"] = str(dataset_path)
+                f.attrs["reference_path"] = str(reference_path)
+                f.attrs["problem"] = problem
+                f.attrs["method"] = "npe_full_data"
+                f.attrs["seed"] = int(seed)
+                f.attrs["num_eval"] = int(num_ref_eval)
+                f.attrs["num_posterior_samples"] = int(num_ref_samples)
+                f.attrs["theta_dim"] = int(ref_theta_dim)
+                f.attrs["theta_transform"] = theta_scaling_metadata_dict["transform"]
+                f.attrs["x_transform"] = x_scaling_metadata["transform"]
+
+            summary.update(
+                {
+                    "reference_path": str(reference_path),
+                    "reference_posterior_samples_path": str(reference_posterior_samples_path),
+                    "num_reference_eval": int(num_ref_eval),
+                    "num_reference_posterior_samples": int(num_ref_samples),
+                    "reference_posterior_sampling_time_sec": float(reference_sampling_time_sec),
+                    "reference_num_sampling_failures": int(reference_num_sampling_failures),
+                    "reference_num_sampling_fallbacks": int(reference_num_sampling_fallbacks),
+                    "reference_fallback_sampling_used": bool(reference_fallback_sampling_used),
+                }
+            )
         diagnostics_end = time.perf_counter()
         diagnostics_time_sec = diagnostics_end - diagnostics_start
         total_end = time.perf_counter()

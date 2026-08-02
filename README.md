@@ -562,15 +562,20 @@ Experiment root output:
 ### Full-data NPE
 
 Uses `x_full` only and serves as the reference no-missingness baseline.
+The configured full-data runs also sample posteriors on the ten fixed reference
+observations for posterior-fidelity metrics.
 
 ```bash
 PYTHONPATH=src python experiments/npe_full_data/train.py \
-  --config experiments/npe_full_data/full_sim_budget/oup_config.yaml
+  --config experiments/npe_full_data/high_sim_budget/oup_config.yaml
 ```
 
-Low simulation budget:
+Mid and low simulation budgets:
 
 ```bash
+PYTHONPATH=src python experiments/npe_full_data/train.py \
+  --config experiments/npe_full_data/mid_sim_budget/oup_config.yaml
+
 PYTHONPATH=src python experiments/npe_full_data/train.py \
   --config experiments/npe_full_data/low_sim_budget/oup_config.yaml
 ```

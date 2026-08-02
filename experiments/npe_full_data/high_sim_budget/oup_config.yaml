@@ -1,7 +1,9 @@
 dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps010_seed123.h5
 problem: oup
-output_dir: outputs/npe_full_data/oup_full_data
-seeds: [26485, 976532, 1172401, 512417, 8991732, 314159, 271828, 161803, 141421, 173205]
+output_dir: outputs_high_sim_budget/npe_full_data/oup_full_data
+seeds: [101, 202, 303, 404, 505]
+reference_path: references/reference_posteriors_v1/oup_references.h5
+reference_num_posterior_samples: 10000
 
 npe:
   density_estimator: nsf
