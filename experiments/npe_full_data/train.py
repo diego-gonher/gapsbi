@@ -19,6 +19,7 @@ from sbi.diagnostics import check_tarp
 from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
 from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+from gapsbi.evaluation.reference_metrics import compute_reference_metrics
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
 from gapsbi.evaluation.tarp import compute_tarp_from_samples
 from gapsbi.io import load_gapsbi_hdf5
@@ -494,7 +495,7 @@ def main() -> None:
         reference_num_sampling_fallbacks: int | None = None
         reference_fallback_sampling_used: bool | None = None
         if reference_path:
-            ref_observations, _ref_theta_samples, ref_metadata, _ref_diagnostics = (
+            ref_observations, ref_theta_samples, ref_metadata, _ref_diagnostics = (
                 load_reference_posteriors_hdf5(reference_path)
             )
             if str(ref_metadata.get("problem", "")).lower() != problem:
@@ -532,6 +533,12 @@ def main() -> None:
             reference_samples_np = theta_scaler.inverse_transform(
                 reference_samples_scaled_np.reshape(-1, ref_theta_dim)
             ).reshape(num_ref_eval, num_ref_samples, ref_theta_dim)
+            if reference_samples_np.shape != ref_theta_samples.shape:
+                raise ValueError(
+                    "Estimator reference posterior samples must match reference "
+                    f"posterior shape exactly, got estimator={reference_samples_np.shape} "
+                    f"and reference={ref_theta_samples.shape}."
+                )
 
             reference_posterior_samples_path = seed_output_dir / "reference_posterior_samples.h5"
             with h5py.File(reference_posterior_samples_path, "w") as f:
@@ -550,6 +557,15 @@ def main() -> None:
                 f.attrs["theta_transform"] = theta_scaling_metadata_dict["transform"]
                 f.attrs["x_transform"] = x_scaling_metadata["transform"]
 
+            reference_metrics_start = time.perf_counter()
+            reference_metric_rows = compute_reference_metrics(
+                estimator_samples=reference_samples_np,
+                reference_samples=ref_theta_samples,
+                seed=seed + 40_000,
+                max_samples_per_observation=num_ref_samples,
+            )
+            reference_metrics_time_sec = time.perf_counter() - reference_metrics_start
+
             summary.update(
                 {
                     "reference_path": str(reference_path),
@@ -560,6 +576,23 @@ def main() -> None:
                     "reference_num_sampling_failures": int(reference_num_sampling_failures),
                     "reference_num_sampling_fallbacks": int(reference_num_sampling_fallbacks),
                     "reference_fallback_sampling_used": bool(reference_fallback_sampling_used),
+                    "reference_metrics_time_sec": float(reference_metrics_time_sec),
+                    "reference_metrics_space": "theta_unscaled",
+                    "reference_metrics_num_samples_used": [
+                        int(row["num_samples_used"]) for row in reference_metric_rows
+                    ],
+                    "reference_metrics_reference_index": [
+                        int(row["reference_index"]) for row in reference_metric_rows
+                    ],
+                    "reference_c2st_accuracy": [
+                        float(row["c2st_accuracy"]) for row in reference_metric_rows
+                    ],
+                    "reference_posterior_mean_shift": [
+                        float(row["posterior_mean_shift"]) for row in reference_metric_rows
+                    ],
+                    "reference_covariance_trace_ratio": [
+                        float(row["covariance_trace_ratio"]) for row in reference_metric_rows
+                    ],
                 }
             )
         diagnostics_end = time.perf_counter()

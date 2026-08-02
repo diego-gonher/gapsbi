@@ -18,6 +18,8 @@ using reusable package utilities under `src/gapsbi`.
 - Saves posterior samples, TARP/SBC diagnostics, and summary JSONs.
 - Optionally samples the trained posterior on the ten fixed reference
   observations when `reference_path` is configured.
+- Computes per-reference C2ST, posterior mean shift, and covariance trace ratio
+  against the high-quality reference posterior samples.
 
 ## Run
 
@@ -44,8 +46,11 @@ For each seed under `output_dir/seed_<seed>/`:
 - `tarp.png`
 - `sbc_rank_histograms.png`
 - `diagnostics_arrays.npz`
-- `summary.json`
+- `summary.json`, including per-reference metric lists when `reference_path` is configured:
+  - `reference_c2st_accuracy`
+  - `reference_posterior_mean_shift`
+  - `reference_covariance_trace_ratio`
 
 At the root `output_dir/`:
 
-- `all_results.json`
+- `all_results.json`, including the same per-seed summary fields

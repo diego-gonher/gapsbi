@@ -63,8 +63,8 @@ Implemented evaluation and analysis:
 - SBC rank diagnostics
 - Benchmark result aggregation
 - Full-data seed diagnostics
-- MMD and C2ST posterior shift metrics
-- Per-observation posterior shift metrics
+- C2ST and posterior moment metrics against fixed reference posteriors
+- Per-observation posterior fidelity metrics
 - Dataset characterization diagnostics
 
 ## Benchmark V1
@@ -562,8 +562,9 @@ Experiment root output:
 ### Full-data NPE
 
 Uses `x_full` only and serves as the reference no-missingness baseline.
-The configured full-data runs also sample posteriors on the ten fixed reference
-observations for posterior-fidelity metrics.
+The configured full-data runs also sample 10,000 posterior draws on the ten fixed
+reference observations and compute per-reference C2ST, posterior mean shift, and
+covariance trace ratio against the high-quality reference posterior samples.
 
 ```bash
 PYTHONPATH=src python experiments/npe_full_data/train.py \
@@ -685,14 +686,11 @@ PYTHONPATH=src python experiments/npe_rise/train.py \
 
 ### Posterior Shift
 
-- **MMD**: maximum mean discrepancy between posterior sample distributions. The implemented scripts use an RBF kernel with the median heuristic. Larger MMD indicates larger distributional shift.
-- **C2ST**: classifier two-sample test accuracy. A logistic classifier is trained to distinguish posterior samples from two methods or seeds. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger shift.
+- **C2ST**: classifier two-sample test accuracy. The reference-metric implementation follows the SBIBM-style MLP classifier with 5-fold cross-validation, comparing estimator posterior samples to high-quality reference posterior samples. Accuracy near `0.5` indicates hard-to-distinguish posteriors; higher accuracy indicates stronger discrepancy.
 - **Euclidean posterior mean shift**: Euclidean distance between posterior means. This is a simple location-shift diagnostic.
-- **Mahalanobis posterior mean shift**: posterior mean displacement measured in units of the matched full-data posterior covariance. Values near `0` indicate little location shift; values around `1` indicate roughly one posterior standard deviation of displacement.
-- **Covariance trace ratio**: ratio of missing-data posterior covariance trace to full-data posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average.
-- **Log-determinant covariance ratio**: difference in log covariance determinants, `logdet(Sigma_missing) - logdet(Sigma_full)`. Positive values indicate posterior uncertainty-volume expansion; negative values indicate contraction.
+- **Covariance trace ratio**: ratio of estimator posterior covariance trace to reference posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average; values below `1` indicate contraction.
 
-Posterior shift is computed from existing `posterior_samples.h5` files and does not retrain models.
+Reference posterior metrics are computed from existing posterior sample files and do not retrain models.
 
 ## Benchmark Analysis Scripts
 
