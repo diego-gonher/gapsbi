@@ -608,9 +608,13 @@ PYTHONPATH=src python experiments/npe_imputation/train.py \
 Budget queues:
 
 ```bash
-bash experiments/npe_imputation/npe_imputation_run_queue_high_sim_budget.sh
-bash experiments/npe_imputation/npe_imputation_run_queue_mid_sim_budget.sh
-bash experiments/npe_imputation/npe_imputation_run_queue_low_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
+
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_low_sim_budget.sh
 ```
 
 These configs also sample 10,000 posterior draws for the ten fixed reference
@@ -751,7 +755,7 @@ Launch budget-specific queues, for example:
 
 ```bash
 bash experiments/npe_full_data/npe_full_data_run_queue_low_sim_budget.sh
-bash experiments/npe_imputation/npe_imputation_run_queue_low_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
 ```
 
 Analyze stability and runtime across seeds/configurations:

@@ -46,14 +46,23 @@ PYTHONPATH=src python experiments/npe_imputation/generate_configs.py
 
 ## Run Queues
 
+Mean imputation only:
+
 ```bash
-bash experiments/npe_imputation/npe_imputation_run_queue_low_sim_budget.sh
-bash experiments/npe_imputation/npe_imputation_run_queue_mid_sim_budget.sh
-bash experiments/npe_imputation/npe_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_imputation/npe_mean_imputation_run_queue_high_sim_budget.sh
 ```
 
-Each queue runs both zero and mean imputation for all problems, mechanisms, and
-fractions.
+Zero imputation only:
+
+```bash
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_low_sim_budget.sh
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_imputation/npe_zero_imputation_run_queue_high_sim_budget.sh
+```
+
+Each queue runs one imputation rule for all problems, mechanisms, and fractions.
 
 ## Single Run
 
