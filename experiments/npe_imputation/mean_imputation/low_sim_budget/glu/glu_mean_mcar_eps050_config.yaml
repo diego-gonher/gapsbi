@@ -1,21 +1,30 @@
 dataset_path: data/canonical_v1/glu/mcar/glu_mcar_eps050_seed123.h5
 problem: glu
 output_dir: outputs_low_sim_budget/npe_mean_imputation/glu/mcar/glu_mcar_eps050
-seeds: [26485, 976532, 1172401, 512417, 8991732, 314159, 271828, 161803, 141421, 173205]
-max_train_samples: 4500
-max_val_samples: 500
-
+seeds:
+- 101
+- 202
+- 303
+- 404
+- 505
+reference_path: references/reference_posteriors_v1/glu_references.h5
+reference_mask_seed: 987654
+reference_num_posterior_samples: 10000
+reference_metrics:
+  c2st_max_samples_per_observation: 2000
+  c2st_n_folds: 3
+  c2st_hidden_layer_scale: 5
 npe:
   density_estimator: nsf
   device: cpu
-  training_batch_size: 256
+  training_batch_size: 100
   stop_after_epochs: 20
   max_num_epochs: 5000
-
 evaluation:
   test_sample: 1000
   num_posterior_samples: 1000
   num_alpha_grid: 101
-
 imputation:
   method: mean
+max_train_samples: 900
+max_val_samples: 100

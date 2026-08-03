@@ -1,0 +1,30 @@
+dataset_path: data/canonical_v1/lotka_volterra/mnar/lotka_volterra_log_total_mnar_eps010_seed123.h5
+problem: lotka_volterra
+output_dir: outputs_mid_sim_budget/npe_zero_imputation/lotka_volterra/mnar/lotka_volterra_log_total_mnar_eps010
+seeds:
+- 101
+- 202
+- 303
+- 404
+- 505
+reference_path: references/reference_posteriors_v1/lotka_volterra_references.h5
+reference_mask_seed: 987654
+reference_num_posterior_samples: 10000
+reference_metrics:
+  c2st_max_samples_per_observation: 2000
+  c2st_n_folds: 3
+  c2st_hidden_layer_scale: 5
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+evaluation:
+  test_sample: 1000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
+imputation:
+  method: zero
+max_train_samples: 9000
+max_val_samples: 1000

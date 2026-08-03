@@ -1,0 +1,761 @@
+
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2026_conference,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{multirow}
+
+% Notation macros for the GAPSBI data contract (defined defensively to avoid
+% clashing with math_commands.tex).
+\providecommand{\xfull}{\mathbf{x}_{\mathrm{full}}}
+\providecommand{\xobs}{\mathbf{x}_{\mathrm{obs}}}
+\providecommand{\xtilde}{\widetilde{\mathbf{x}}}
+\providecommand{\xhat}{\widehat{\mathbf{x}}}
+\providecommand{\mvec}{\mathbf{m}}
+\providecommand{\thetab}{\boldsymbol{\theta}}
+\providecommand{\phib}{\boldsymbol{\phi}}
+
+
+\title{GAPSBI: A Benchmark for Simulation-Based Inference under Missing Data}
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{Antiquus S.~Hippocampus, Natalia Cerebro \& Amelie P. Amygdale \thanks{ Use footnote for providing further information
+about author (webpage, alternative address)---\emph{not} for acknowledging
+funding agencies.  Funding acknowledgements go at the end of the paper.} \\
+Department of Computer Science\\
+Cranberry-Lemon University\\
+Pittsburgh, PA 15213, USA \\
+\texttt{\{hippo,brain,jen\}@cs.cranberry-lemon.edu} \\
+\And
+Ji Q. Ren \& Yevgeny LeNet \\
+Department of Computational Neuroscience \\
+University of the Witwatersrand \\
+Joburg, South Africa \\
+\texttt{\{robot,net\}@wits.ac.za} \\
+\AND
+Coauthor \\
+Affiliation \\
+Address \\
+\texttt{email}
+}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+%\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\begin{document}
+
+
+\maketitle
+
+\begin{abstract}
+Simulation-based inference (SBI) increasingly targets scientific settings where
+observations are incomplete, yet missing data is rarely treated as a controlled,
+systematically benchmarked axis of evaluation. We introduce GAPSBI, a benchmark
+and experimentation framework for simulation-based inference under missing data.
+GAPSBI couples a small set of synthetic simulators with explicit missingness
+mechanisms spanning missing-completely-at-random (MCAR), missing-at-random (MAR),
+and missing-not-at-random (MNAR) processes, reproducible HDF5 datasets with
+fixed train/validation/test splits and seeds, a family of neural posterior
+estimation (NPE) baselines that share a common posterior-estimation backbone, and
+a standardized evaluation protocol. The protocol combines posterior calibration
+diagnostics (simulation-based calibration and TARP coverage) with posterior shift
+metrics that compare each missing-data posterior against fixed high-quality
+reference posteriors, together with full-data seed-to-seed variability baselines that
+quantify how much observed shift is attributable to training stochasticity.
+GAPSBI also defines distinct simulation-budget regimes so that method behavior
+can be studied as a function of the amount of training simulation. This draft
+documents the benchmark design, tasks, missingness mechanisms, simulation
+budgets, baseline methods, and evaluation protocol; empirical results are
+reported in companion sections.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+Simulation-based inference (SBI) enables Bayesian parameter estimation for models
+defined only through a stochastic simulator, by learning surrogate posteriors
+from simulated parameter-observation pairs. Neural posterior estimation (NPE),
+in particular, trains a conditional density estimator to approximate the
+posterior over simulator parameters given an observation. In many scientific
+applications, however, the observation is incomplete: sensors drop out, parts of
+a time series are unrecorded, or measurements are censored. Practitioners
+therefore must adapt SBI methods to partially observed data, but the field lacks
+a controlled, reproducible benchmark that isolates the effect of missingness on
+posterior quality.
+
+This motivates a central question for GAPSBI: which missing-data representation
+works best for a fixed Neural Posterior Estimation (NPE) backbone? Existing
+approaches to missing data often change several ingredients at once: the
+representation of partial observations, the inference architecture, the
+optimization objective, and sometimes the inference procedure itself. Such
+comparisons are scientifically useful but difficult to interpret when the goal is
+to understand the missing-data representation. GAPSBI instead fixes the
+downstream posterior estimator to NPE with a neural spline flow (NSF) density
+estimator wherever possible, so that differences between baselines are primarily
+attributable to how $\xobs$ and $\mvec$ are represented before posterior
+estimation.
+
+GAPSBI addresses this gap. It is a benchmark and experimentation framework for
+simulation-based inference under missing data, built around a deliberately simple
+and explicit data contract: each dataset stores complete simulator outputs
+$\xfull$, a binary mask $\mvec$ where $1$ denotes observed and $0$ denotes
+missing, and the observed data $\xobs = \xfull \odot \mvec$, together with the
+underlying parameters $\thetab$. Datasets are saved in a shared HDF5 layout with
+fixed train, validation, and test splits and explicit random seeds, so that
+experiments are reproducible and comparable across methods. The formal setup is
+given in Section~\ref{sec:benchmark}.
+
+The benchmark spans several synthetic simulators and three families of missingness
+mechanisms (MCAR, MAR, and MNAR), providing a structured space in which to study
+how different missingness processes affect inference. On top of the datasets,
+GAPSBI provides a set of NPE baselines for handling missingness, ranging from a
+full-data no-missingness model to imputation, mask augmentation, masked embeddings,
+learned imputation, and a RISE-style probabilistic imputation baseline. It
+further provides a standardized evaluation protocol that goes
+beyond visual inspection of posterior samples: it measures posterior calibration
+with simulation-based calibration (SBC) and TARP coverage, and quantifies how
+much each method posterior departs from a fixed high-quality reference posterior using
+distributional and moment-based posterior shift metrics. Because NPE training is
+stochastic, GAPSBI also computes full-data seed-to-seed variability baselines,
+so that observed posterior shifts can be interpreted relative to intrinsic
+training variability rather than attributed naively to missingness.
+
+\paragraph{Contributions.} This paper makes the following contributions, all of
+which are reflected in the accompanying open-source repository:
+\begin{itemize}
+  \item A reproducible benchmark framework for SBI under missing data, with a
+  simple HDF5 dataset contract, explicit seeds, and standardized train,
+  validation, and test splits.
+  \item A collection of synthetic simulators together with explicit MCAR, MAR,
+  and MNAR missingness mechanisms that can be combined at controlled missingness
+  fractions.
+  \item A family of NPE baselines for partially observed data: full-data NPE,
+  zero- and mean-imputation NPE, mask-augmentation NPE, masked-pooling and
+  masked-attention embedding NPE, learned-imputation NPE, and NPE with
+  RISE-style probabilistic imputation.
+  \item A controlled experimental design that isolates missing-data
+  representations while holding the posterior-estimation backbone fixed, enabling
+  direct comparisons of how partial observations are encoded for inference.
+  \item A standardized evaluation protocol combining calibration diagnostics
+  (SBC, TARP), posterior shift metrics relative to high-quality reference
+  posteriors, and full-data variability baselines.
+  \item A simulation-budget design that defines distinct high-, mid-, and
+  low-budget regimes over the same datasets, enabling study of method behavior
+  as a function of training simulation budget.
+\end{itemize}
+
+\section{Related Work}
+\label{sec:related-work}
+
+\textit{Placeholder.} This section will situate GAPSBI within prior work. Planned
+coverage (to be completed with appropriate citations):
+\begin{itemize}
+  \item Simulation-based inference and neural posterior estimation methods.
+  Transformer-based SBI methods, including Simformer-style architectures, pursue
+  a complementary design philosophy: they modify the inference architecture
+  itself to process structured or partially observed inputs. GAPSBI instead
+  fixes the posterior estimator and compares missing-data representations under a
+  common NPE backbone, separating representation effects from architectural
+  effects.
+  \item Existing SBI benchmarks and standardized evaluation efforts.
+  \item Calibration diagnostics for posterior approximations, including
+  simulation-based calibration and coverage-based tests.
+  \item Methods for inference and learning under missing data, including
+  imputation, masking, and missingness-aware modeling.
+\end{itemize}
+
+\section{The GAPSBI Benchmark}
+\label{sec:benchmark}
+
+GAPSBI is organized around reproducible datasets, a fixed set of simulators,
+explicit missingness mechanisms, and clearly separated simulation-budget regimes.
+This section describes the design goals, the benchmark tasks, the missingness
+mechanisms, and the simulation budgets.
+
+\paragraph{Problem setup and notation.} Each benchmark instance is defined by a
+prior $p(\thetab)$ over parameters $\thetab \in \mathbb{R}^{d_\theta}$ and a
+stochastic simulator that induces a likelihood $p(\xfull \mid \thetab)$ over
+complete observations $\xfull \in \mathbb{R}^{d}$. A complete example is drawn as
+\begin{equation}
+  \thetab \sim p(\thetab), \qquad \xfull \sim p(\xfull \mid \thetab).
+  \label{eq:generative}
+\end{equation}
+Missingness is then introduced through a binary mask
+$\mvec \in \{0,1\}^{d}$ sampled from a mechanism-dependent distribution, and the
+observed data is obtained by elementwise multiplication,
+\begin{equation}
+  \xobs = \xfull \odot \mvec, \qquad
+  m_i =
+  \begin{cases}
+    1 & \text{if entry $i$ is observed},\\
+    0 & \text{if entry $i$ is missing},
+  \end{cases}
+  \label{eq:contract}
+\end{equation}
+where $\odot$ denotes elementwise multiplication. Each dataset stores the tuple
+$(\thetab, \xfull, \xobs, \mvec)$ for every example, partitioned into train,
+validation, and test splits.
+
+\subsection{Design Goals}
+\label{sec:design-goals}
+
+GAPSBI is guided by a small number of explicit design goals.
+
+\paragraph{Reproducibility and an explicit data contract.} Every dataset follows
+the same contract of Equations~\eqref{eq:generative}--\eqref{eq:contract}:
+generate complete simulator outputs $\xfull$, generate a binary mask $\mvec$ with
+the convention $1 = \text{observed}$ and $0 = \text{missing}$, store observed data
+as $\xobs = \xfull \odot \mvec$, and save train, validation, and test splits in a
+shared HDF5 format. Randomness is kept explicit through fixed seeds. Datasets use
+a grouped HDF5 layout with \texttt{/train}, \texttt{/val}, and \texttt{/test}
+groups, each containing \texttt{theta}, \texttt{x\_full}, \texttt{x\_obs}, and
+\texttt{mask} arrays, with simulator and mask metadata stored as file-level
+attributes (nested metadata serialized as JSON). This makes datasets
+self-describing and directly comparable across methods.
+
+\paragraph{Simplicity and low engineering burden.} The benchmark deliberately
+favors small, cheap, and easily reproducible problems and relies on standard NPE
+tooling. This keeps the core baselines easy to run and reproduce, including in a
+purely local setting, and lowers the barrier to extending the benchmark.
+
+\paragraph{Systematic missingness coverage.} A central goal is to compare MCAR,
+MAR, and MNAR missingness carefully and at controlled missingness fractions,
+rather than studying a single ad hoc missingness pattern. This is reflected in
+the explicit mechanism implementations described in
+Section~\ref{sec:missingness}.
+
+\paragraph{Controlled architectural comparisons.} GAPSBI is designed to study
+representation choices rather than conflate them with changes in the inference
+architecture. Whenever possible, benchmark methods share the same downstream
+posterior estimator---an NSF-based NPE model---and differ only in the
+conditioning variable $\mathbf{c}$ passed to that estimator. This makes the
+comparison focus on how partially observed data are encoded, completed, or
+embedded before inference.
+
+\paragraph{Standardized, calibration-aware evaluation.} GAPSBI is built so that
+methods are evaluated with a shared protocol that emphasizes calibration (SBC and
+TARP) and quantitative posterior comparison, rather than relying on visual
+inspection of posterior samples. The full protocol is described in
+Section~\ref{sec:evaluation}.
+
+\paragraph{Modularity and extensibility.} The benchmark is organized into
+modular task and method directories, so that tasks, representations,
+architectures, and analysis can be extended incrementally without disrupting
+existing baselines.
+
+\paragraph{Persisted experiment artifacts.} Each run writes not only posterior
+samples and diagnostics, but also the trained per-seed NPE checkpoint. The
+checkpoint contains the fitted conditional density estimator, preprocessing maps
+for $\thetab$ and $\xobs$, run metadata, and any method-specific components such
+as an embedding network or imputer. This makes it possible to reconstruct
+$q_{\phib}(\thetab \mid \cdot)$ for additional posterior sampling without
+retraining.
+
+\subsection{Benchmark Tasks}
+\label{sec:tasks}
+
+GAPSBI implements several synthetic simulators. Each simulator defines a parameter
+vector $\thetab \in \mathbb{R}^{d_\theta}$, an observation
+$\xfull \in \mathbb{R}^{d}$, and a prior over parameters.
+
+\begin{itemize}
+  \item \textbf{OUP} (\texttt{oup}): an Ornstein--Uhlenbeck process with
+  $\thetab = (\theta_1, \log \theta_2)$, $d_\theta = 2$, and $d=25$. Prior:
+  $\theta_1 \sim \mathcal{U}(0,2)$ and
+  $\log \theta_2 \sim \mathcal{U}(-2,3)$.
+  \item \textbf{GLU} (\texttt{glu}): the Gaussian Linear Uniform benchmark with
+  $d_\theta = d = 10$. Prior:
+  $\theta_i \sim \mathcal{U}(-1,1)$ for each coordinate; the simulator draws
+  $\xfull = \thetab + \boldsymbol{\epsilon}$ with Gaussian observation noise.
+  \item \textbf{GLM} (\texttt{glm}): a Bernoulli generalized linear model with
+  fixed stimulus features, $d_\theta=10$, and a default duration of $100$ time
+  bins. Prior: an SBIBM-style Gaussian prior, with intercept
+  $\theta_0 \sim \mathcal{N}(0,2)$ and stimulus-filter weights
+  $\thetab_{1:9} \sim \mathcal{N}(\mathbf{0},(F^\top F)^{-1})$. In summary
+  mode, $\xfull$ contains a spike count and spike-triggered stimulus summaries;
+  in raw mode, $\xfull$ is the binary spike train.
+  \item \textbf{Lotka--Volterra} (\texttt{lotka\_volterra}): a two-population
+  predator--prey ODE benchmark with
+  $\thetab=(\alpha,\beta,\gamma,\delta)$, $d_\theta=4$, and an interleaved
+  prey/predator observation vector of length $d=100$ formed from $50$ timestamps.
+  Prior: $\log \thetab \sim
+  \mathcal{N}((-0.125,-3.0,-0.125,-3.0), 0.5^2 I)$.
+  \item \textbf{Spatial SIR} (\texttt{spatial\_sir}): a spatial SIR lattice model
+  with $\thetab=(\beta,\gamma)$, $d_\theta=2$, a default $16 \times 16$ lattice,
+  and a single final susceptible/infected/recovered snapshot at measurement time
+  $0.25$, flattened to $d=768$. Prior:
+  $\beta \sim \mathcal{U}(0,1)$ and $\gamma \sim \mathcal{U}(0,1)$.
+  \item \textbf{Hodgkin--Huxley} (\texttt{hodgkin\_huxley}): a Hodgkin--Huxley
+  neuron model with $\thetab=(g_{\mathrm{Na}}, g_{\mathrm{K}})$,
+  $d_\theta=2$, and a downsampled raw voltage trace as the observation
+  (approximately $d=601$ by default). Prior:
+  $g_{\mathrm{Na}} \sim \mathcal{U}(0.5,80.0)$ and
+  $g_{\mathrm{K}} \sim \mathcal{U}(10^{-4},15.0)$.
+\end{itemize}
+
+The main benchmark focuses on four lightweight tasks (OUP, GLM, GLU,
+and Lotka--Volterra), which are inexpensive enough for repeated missingness,
+method, seed, and simulation-budget sweeps; Spatial SIR, Hodgkin--Huxley, and a
+legacy Ricker simulator are implemented but are not part of the main benchmark.
+Table~\ref{tab:priors}
+lists the parameters and priors of these tasks, and
+Table~\ref{tab:tasks-overview} summarizes their dimensions and observation types.
+
+\begin{table}[t]
+\centering
+\caption{Parameters and priors for the main benchmark tasks.
+$\mathcal{U}(a,b)$ denotes a uniform distribution on $[a,b]$.}
+\label{tab:priors}
+\begin{tabular}{@{}lp{0.25\linewidth}p{0.50\linewidth}@{}}
+\toprule
+Problem & Parameter & Prior \\
+\midrule
+\multirow{2}{*}{OUP}
+  & $\theta_1$       & $\mathcal{U}(0, 2)$ \\
+  & $\log \theta_2$  & $\mathcal{U}(-2, 3)$ \\
+\midrule
+\multirow{2}{*}{GLM}
+  & $\theta_0$ & $\mathcal{N}(0,2)$ \\
+  & $\thetab_{1:9}$ & $\mathcal{N}(\mathbf{0}, (F^\top F)^{-1})$ \\
+\midrule
+GLU & $\theta_i,\ i = 1, \dots, 10$ & $\mathcal{U}(-1, 1)$ \\
+\midrule
+Lotka--Volterra & $(\alpha,\beta,\gamma,\delta)$ &
+$\log \alpha,\log \gamma \sim \mathcal{N}(-0.125,0.5^2)$;
+$\log \beta,\log \delta \sim \mathcal{N}(-3.0,0.5^2)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Overview of the main benchmark tasks: parameter dimension
+$\dim(\thetab)$, observation dimension $\dim(\xfull)$, and observation type. GLM
+is used in its raw spike-train configuration (duration $100$).}
+\label{tab:tasks-overview}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Problem & $\dim(\thetab)$ & $\dim(\xfull)$ & Observation type \\
+\midrule
+OUP    & $2$  & $25$  & Ornstein--Uhlenbeck time series \\
+GLM    & $10$ & $100$ & Binary spike train \\
+GLU    & $10$ & $10$  & Gaussian observation vector \\
+Lotka--Volterra & $4$ & $100$ & Interleaved prey/predator time series \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Missingness Mechanisms}
+\label{sec:missingness}
+
+GAPSBI implements three families of missingness mechanisms, all using the
+convention that a mask value of $1$ denotes an observed entry and $0$ a missing
+entry, with $\xobs = \xfull \odot \mvec$. The families differ in what the mask
+distribution $p(\mvec \mid \xfull, \thetab)$ is allowed to depend on, which is the
+standard distinction between MCAR, MAR, and MNAR. We write $p$ for the target
+missing fraction.
+
+\paragraph{MCAR.} Missing-completely-at-random masks are independent of both the
+observed values and index metadata,
+\begin{equation}
+  p(\mvec \mid \xfull, \thetab) = p(\mvec).
+  \label{eq:mcar}
+\end{equation}
+\texttt{PointMCARMask} applies independent Bernoulli masking at each entry,
+$m_i \sim \mathrm{Bernoulli}(1 - p)$, while \texttt{BlockMCARMask} masks
+contiguous blocks for one-dimensional or batched one-dimensional data.
+
+\paragraph{MAR.} \texttt{CoordinateMARMask} implements coordinate- or
+time-dependent missingness whose probability depends only on index metadata $i$
+along the last axis, not on the values of $\xfull$,
+\begin{equation}
+  p(\mvec \mid \xfull, \thetab) = p(\mvec \mid i),
+  \label{eq:mar}
+\end{equation}
+which makes it missing-at-random rather than MNAR. It supports
+\texttt{increasing}, \texttt{decreasing}, and \texttt{middle} modes; the requested
+missing fraction is approximately the realized missing fraction before probability
+clipping, and the realized fraction can be lower when the maximum probability
+clips values.
+
+\paragraph{MNAR.} \texttt{SelfCensoringMNARMask} implements value-dependent
+self-censoring, so the mask distribution depends on $\xfull$ through a per-entry
+score $\mathbf{s} = \mathrm{normalize}(g(\xfull)) \in [0,1]^{d}$,
+\begin{equation}
+  p(\mvec \mid \xfull, \thetab) = p(\mvec \mid \mathbf{s}),
+  \qquad \mathbf{s} = \mathrm{normalize}(g(\xfull)),
+  \label{eq:mnar}
+\end{equation}
+where each sample is optionally transformed by $g$, min/max shifted into
+$[0,1]$, and higher normalized scores $s_i$ receive higher missingness
+probability; constant samples use a score of $0.5$ everywhere to avoid division
+instability. The transform $g$ is one of \texttt{identity} ($g(\xfull) = \xfull$),
+\texttt{log1p} ($g(\xfull) = \log(1 + \xfull)$, suited to nonnegative spiky or
+count data), or \texttt{abs} ($g(\xfull) = |\xfull|$, suited to
+signed vector data where magnitude should drive missingness).
+For OUP, GLM, and GLU, the main benchmark uses a mean-normalized variant of this
+score, which keeps the value-dependent self-censoring behavior while making the
+realized missing fractions closer to the requested nominal levels. Because
+probabilities are clipped, high-MNAR settings can still realize less missingness
+than the nominal fraction; we therefore report realized mask statistics.
+
+For tasks with structured observations such as Spatial SIR, masking is applied at
+the spatial cell level: a single cell-level mask is expanded across the
+susceptible, infected, and recovered channels before flattening, so all channels
+for a cell are jointly observed or missing.
+
+For Lotka--Volterra, the two population channels are packed into a one-dimensional
+interleaved vector. Missingness is therefore applied at the timestamp level: a
+single MCAR, MAR, or MNAR decision observes or hides both prey and predator at the
+same time point. Its MNAR mechanism uses the log total population
+$\log(\mathrm{prey}_t+\mathrm{predator}_t)$ as the timestamp-level score.
+
+\subsection{Simulation Budgets}
+\label{sec:budgets}
+
+GAPSBI separates the amount of training simulation into explicit budget regimes
+that share the same underlying datasets, seeds, and test split, so that method
+behavior can be compared across simulation budgets without confounds.
+
+The canonical dataset configuration uses fixed split sizes of $90{,}000$ training,
+$10{,}000$ validation, and $1{,}000$ test examples, generated with dataset seed
+$123$. Missingness is applied at fractions $0.10$, $0.25$, and $0.50$. The
+canonical mechanism instantiations are point MCAR, coordinate MAR with
+\texttt{mar-mode = increasing}, and mean-normalized identity self-censoring MNAR
+for OUP, GLM, and GLU. Lotka--Volterra uses timestamp-level analogues: block
+MCAR, increasing time-index MAR, and log-total-population MNAR.
+
+On top of these datasets, configurations are organized into three
+simulation-budget regimes:
+\begin{itemize}
+  \item \textbf{High simulation budget}: the canonical
+  $90$k\,/\,$10$k\,/\,$1$k train/validation/test setup.
+  \item \textbf{Mid simulation budget}: a $9$k train / $1$k validation ablation
+  that reuses the same HDF5 datasets and the full $1{,}000$-example test split.
+  \item \textbf{Low simulation budget}: a $900$ train / $100$ validation
+  ablation that also reuses the same datasets and test split.
+\end{itemize}
+
+Within each budget regime, every configuration is trained with a fixed list of
+five random seeds, allowing seed-level aggregation and variability analysis (see
+Section~\ref{sec:evaluation}).
+
+\section{Methods}
+\label{sec:methods}
+
+All benchmark methods use the same downstream NPE density estimator, an NSF
+conditional flow, and differ only in the conditioning variable $\mathbf{c}$ or in
+the representation used to construct it from $\xfull$, $\xobs$, and $\mvec$.
+This isolates the scientific question of missing-data representation: when
+$q_{\phib}(\thetab \mid \mathbf{c})$ is held fixed, which encoding of partial
+observations yields the best calibrated and most faithful posterior? Unless
+stated otherwise, observations are transformed using scalers fit on the training
+split, and all posterior sampling is performed from the trained conditional
+density estimator.
+
+\subsection{Full-Data NPE}
+\label{sec:method-full-data}
+
+The full-data baseline trains
+\begin{equation}
+  q_{\phib}(\thetab \mid \mathbf{c}), \qquad \mathbf{c} = T_x(\xfull),
+  \label{eq:full-data-npe}
+\end{equation}
+where $T_x$ denotes the training-set preprocessing transform. This baseline is
+not a missing-data method; it provides a no-missingness NPE baseline and a
+seed-to-seed variability reference, but not the final gold-standard posterior
+used for fidelity metrics.
+
+\subsection{Imputation Baselines}
+\label{sec:method-imputation}
+
+The simplest missing-data baselines first construct a completed observation
+$\xtilde$ and then train
+\begin{equation}
+  q_{\phib}(\thetab \mid T_x(\xtilde)).
+  \label{eq:imputation-npe}
+\end{equation}
+For zero imputation, missing entries are set to $0$ in transformed observation
+space. For mean imputation, a missing coordinate $i$ is set to the empirical
+training mean of coordinate $i$ computed from observed entries only. These
+baselines intentionally discard explicit information about which entries were
+missing.
+
+\subsection{Mask Augmentation}
+\label{sec:method-mask-augmentation}
+
+Mask augmentation exposes the missingness pattern to the posterior estimator.
+After zero-imputing in transformed observation space, the conditioning vector is
+\begin{equation}
+  \mathbf{c} = [\,T_x(\xtilde),\, \mvec\,],
+  \label{eq:mask-augmentation}
+\end{equation}
+and NPE trains $q_{\phib}(\thetab \mid \mathbf{c})$. This lets the estimator use
+both the observed values and the event that particular coordinates are missing,
+which is especially relevant when the missingness mechanism carries information.
+
+\subsection{Masked Embedding NPE}
+\label{sec:method-masked-embedding}
+
+The masked-embedding baselines use the same pair
+$[\,T_x(\xtilde), \mvec\,]$ but pass it through a learned embedding
+$e_\psi$ before density estimation:
+\begin{equation}
+  q_{\phib}(\thetab \mid e_\psi(T_x(\xtilde), \mvec)).
+  \label{eq:masked-embedding}
+\end{equation}
+The masked-pooling variant embeds each coordinate as a token, pools only observed
+tokens, and appends a summary of $\mvec$. The masked-attention variant applies a
+small self-attention encoder in which missing coordinates are excluded as
+attention keys and values while the mask summary remains available to the
+estimator.
+
+\subsection{Learned Imputation}
+\label{sec:method-learned-imputation}
+
+Learned imputation replaces fixed completion rules with an imputer
+$g_\psi(T_x(\xobs), \mvec)$ trained jointly with NPE. The completed observation is
+\begin{equation}
+  \xhat
+  =
+  \mvec \odot T_x(\xobs)
+  +
+  (1 - \mvec) \odot g_\psi(T_x(\xobs), \mvec),
+  \label{eq:learned-imputation}
+\end{equation}
+and the posterior estimator is trained as $q_{\phib}(\thetab \mid \xhat)$. The
+training objective combines the NPE negative log likelihood with a reconstruction
+loss on missing coordinates, using the stored $\xfull$ available in simulated
+training data.
+
+\subsection{NPE RISE-style Probabilistic Imputation}
+\label{sec:method-npe-rise}
+
+The NPE-RISE baseline uses a probabilistic imputer that predicts a completion
+distribution rather than only a point completion. Given $(T_x(\xobs), \mvec)$,
+the imputer outputs coordinate-wise Gaussian parameters
+$(\boldsymbol{\mu}_\psi, \boldsymbol{\sigma}_\psi)$ and forms
+\begin{equation}
+  \xhat
+  =
+  \mvec \odot T_x(\xobs)
+  +
+  (1 - \mvec) \odot \boldsymbol{\mu}_\psi(T_x(\xobs), \mvec).
+  \label{eq:npe-rise-completion}
+\end{equation}
+The density estimator is trained on $q_{\phib}(\thetab \mid \xhat)$ together with
+auxiliary imputation losses. An optional mask-prediction head is enabled for MNAR
+settings, allowing the imputer to model information contained in the missingness
+process itself.
+
+\section{Evaluation Protocol}
+\label{sec:evaluation}
+
+GAPSBI evaluates methods with a standardized protocol applied to held-out test
+observations. For each configuration (task, missingness mechanism, missingness
+fraction, method, and simulation budget) and each of the five seeds, a model is
+trained and posteriors are sampled on the test split. Each run produces per-seed
+artifacts, including the trained model checkpoint
+(\texttt{model\_checkpoint.pt}), posterior samples
+(\texttt{posterior\_samples.h5}), calibration plots (\texttt{tarp.png},
+\texttt{sbc\_rank\_histograms.png}), diagnostic arrays
+(\texttt{diagnostics\_arrays.npz}), and a run summary (\texttt{summary.json}).
+The checkpoint stores the fitted approximation $q_{\phib}(\thetab \mid \cdot)$,
+the preprocessing transformations used to construct its conditioning variables,
+and any learned imputation or embedding components needed to reconstruct the
+model for additional inference. Seed-level summaries are aggregated into a master
+results table for analysis, and stability across seeds and configurations is
+summarized separately.
+
+\subsection{Reference Posteriors}
+\label{sec:eval-reference-posteriors}
+
+For posterior fidelity metrics, GAPSBI uses a fixed set of ten reference
+observations per main benchmark task, stored separately from the training datasets.
+Each reference artifact contains the unscaled parameter draw $\thetab^\star$, the
+unscaled complete observation $\xfull^\star$, and $10{,}000$ unscaled posterior
+samples from a high-quality task-specific reference posterior
+$p(\thetab \mid \xfull^\star)$. GLU uses its analytic truncated-Gaussian
+posterior; OUP uses a high-resolution deterministic grid posterior; GLM uses
+emcee MCMC under the SBIBM-style Gaussian prior; and Lotka--Volterra uses emcee
+MCMC in log-parameter space under the lognormal prior. These reference
+posteriors are validated with marginal and joint posterior plots, posterior
+predictive checks, and, for MCMC references, convergence diagnostics including
+split $\widehat{R}$, effective sample size, trace plots, and independent
+ensemble checks.
+
+Calibration diagnostics use the held-out test split because SBC and TARP require
+many independent parameter-observation pairs. Fidelity and posterior-shift
+metrics instead use the ten fixed reference observations, following the standard
+benchmarking pattern of evaluating approximate posteriors against a smaller
+number of carefully constructed reference posteriors.
+
+For missing-data methods, the ten complete reference observations are converted
+to method inputs by applying the same missingness mechanism and fraction as the
+corresponding experiment, using deterministic reference masks, and then applying
+the method-specific preprocessing or imputation rule. These method posteriors
+are compared to the full-observation reference posteriors. Thus, for missing-data
+methods, including imputation and mask augmentation, the fidelity metrics should
+be interpreted as degradation relative to the full-information posterior, not as
+exact posterior error under a separately constructed missing-data reference
+posterior.
+
+\subsection{Calibration Metrics}
+\label{sec:eval-calibration}
+
+Calibration is assessed with two complementary diagnostics. \textbf{Simulation-based
+calibration (SBC)} examines the ranks of true parameters within posterior samples;
+well-calibrated posteriors yield approximately uniform rank histograms.
+\textbf{TARP} evaluates posterior calibration through expected coverage probability
+curves; GAPSBI stores TARP plots and arrays along with aggregate deviations from
+the identity coverage line (such as mean absolute error and integrated absolute
+error).
+
+\subsection{Posterior Fidelity Metrics}
+\label{sec:eval-fidelity}
+
+Posterior fidelity is measured by how closely a method posterior matches the
+task-specific high-quality reference posterior for the corresponding reference
+observation.
+Let $P$ denote the method posterior and
+$Q$ the reference posterior for a given observation, with sample sets
+$\{\mathbf{a}_i\}_{i=1}^{n} \sim P$ and $\{\mathbf{b}_j\}_{j=1}^{m} \sim Q$.
+
+\textbf{Classifier two-sample test (C2ST).} Following the SBIBM convention, an
+MLP classifier $h$ is trained to distinguish method posterior samples from
+reference posterior samples. Both sample sets are z-scored using the reference
+samples. For computational tractability in repeated seed and budget sweeps, the
+benchmark uses two hidden layers of width $5d_\theta$ and 3-fold
+cross-validation, with 2,000 matched samples per posterior. The test statistic
+is the mean cross-validation accuracy,
+\begin{equation}
+  \mathrm{C2ST} =
+  \frac{1}{|\mathcal{T}|} \sum_{(\mathbf{z}, y) \in \mathcal{T}}
+  \mathbb{1}\!\left[ h(\mathbf{z}) = y \right].
+  \label{eq:c2st}
+\end{equation}
+Accuracy near $0.5$ indicates indistinguishable posteriors, while higher accuracy
+indicates greater divergence. C2ST is computed separately for each fixed
+reference observation using matched sample counts.
+
+\subsection{Posterior Shift Metrics}
+\label{sec:eval-shift}
+
+To characterize \emph{how} a method posterior differs from its high-quality
+reference, GAPSBI decomposes the shift into location and uncertainty-volume
+components using moment-based metrics, computed per observation. Let
+$\boldsymbol{\mu}_{\mathrm{method}}, \Sigma_{\mathrm{method}}$ and
+$\boldsymbol{\mu}_{\mathrm{ref}}, \Sigma_{\mathrm{ref}}$ denote the empirical
+mean and covariance of the method and reference posterior samples,
+respectively.
+
+The \textbf{Euclidean posterior mean shift} is the distance between posterior
+means,
+\begin{equation}
+  D_E = \lVert \boldsymbol{\mu}_{\mathrm{method}} - \boldsymbol{\mu}_{\mathrm{ref}} \rVert_2 .
+  \label{eq:euclidean}
+\end{equation}
+Values near $0$ indicate little location shift. The \textbf{covariance trace
+ratio} compares average marginal variances,
+\begin{equation}
+  R_{\mathrm{tr}} =
+  \frac{\operatorname{tr}(\Sigma_{\mathrm{method}})}{\operatorname{tr}(\Sigma_{\mathrm{ref}})},
+  \label{eq:traceratio}
+\end{equation}
+with values above $1$ indicating larger average marginal variance. The
+reference metrics are computed from stored posterior samples without retraining.
+Together these separate posterior bias (Equation~\eqref{eq:euclidean}) from
+posterior broadening (Equation~\eqref{eq:traceratio}).
+
+\subsection{Variability Baselines}
+\label{sec:eval-variability}
+
+Because NPE training is stochastic, some posterior shift is expected even between
+runs trained on identical complete data with different seeds. GAPSBI therefore
+computes full-data variability baselines: it compares full-data runs against the
+same high-quality reference posteriors using C2ST (Equation~\eqref{eq:c2st}) and
+the same per-observation moment metrics
+(Equations~\eqref{eq:euclidean}--\eqref{eq:traceratio}).
+These baselines establish the
+intrinsic seed-to-seed variability of full-data posteriors, against which
+missing-data posterior shifts can be interpreted, so that differences attributed
+to missingness are distinguished from differences attributable to training
+stochasticity.
+
+\section{Results}
+\label{sec:results}
+
+\textit{Placeholder.} This section will report empirical results once finalized.
+Planned structure:
+\begin{itemize}
+  \item Calibration (SBC, TARP) across tasks, missingness mechanisms, and
+  fractions.
+  \item Posterior fidelity (C2ST) of each method relative to the fixed
+  high-quality reference posteriors.
+  \item Posterior shift decomposition (mean shift vs.\ covariance changes).
+  \item Comparison against full-data seed variability baselines.
+  \item Effect of simulation budget (high vs.\ mid vs.\ low).
+\end{itemize}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\textit{Placeholder.} This section will interpret the results, including how
+missingness mechanism and fraction interact with method behavior and calibration,
+and what the posterior shift decomposition reveals about information loss versus
+posterior displacement.
+
+An important design choice in GAPSBI is to fix the inference backbone while
+varying the missing-data representation. This makes conclusions about
+representations stronger: if two methods differ mainly in whether they impute,
+append the mask, embed observed coordinates, or learn a completion model, then
+differences in calibration or posterior shift are more directly attributable to
+that representation. Future versions of GAPSBI can naturally incorporate
+architecturally distinct SBI methods, including transformer-based or
+foundation-model-based posterior estimators, but this paper intentionally limits
+architectural variability to isolate the question of representation under a
+common NPE backbone.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\textit{Placeholder.} Anticipated limitations to be discussed include the
+synthetic and relatively low-dimensional nature of the current tasks, the focus on
+a controlled subset of tasks and methods, and the scope of the
+evaluation protocol. This section will be completed alongside the results.
+
+The benchmark currently fixes the NPE architecture for the main representation
+comparisons. This improves experimental control, but it does not answer how
+fundamentally different SBI architectures compare under missing data. Evaluating
+methods such as Simformer within the same dataset and evaluation protocol is a
+natural direction for future work.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\textit{Placeholder.} This section will summarize the benchmark and its intended
+role for studying simulation-based inference under missing data, and outline
+directions for extension.
+
+\bibliography{iclr2026_conference}
+\bibliographystyle{iclr2026_conference}
+
+
+\end{document}

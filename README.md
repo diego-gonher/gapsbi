@@ -592,15 +592,31 @@ Uses `x_obs` after scaling, then imputes missing entries in scaled x-space.
 
 ```bash
 PYTHONPATH=src python experiments/npe_imputation/train.py \
-  --config experiments/npe_imputation/zero_imputation/full_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
+  --config experiments/npe_imputation/zero_imputation/high_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
 ```
 
-Low simulation budget:
+Mid and low simulation budgets:
 
 ```bash
 PYTHONPATH=src python experiments/npe_imputation/train.py \
+  --config experiments/npe_imputation/zero_imputation/mid_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
+
+PYTHONPATH=src python experiments/npe_imputation/train.py \
   --config experiments/npe_imputation/zero_imputation/low_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
 ```
+
+Budget queues:
+
+```bash
+bash experiments/npe_imputation/npe_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_imputation/npe_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_imputation/npe_imputation_run_queue_low_sim_budget.sh
+```
+
+These configs also sample 10,000 posterior draws for the ten fixed reference
+observations after applying deterministic experiment-matched masks and the
+configured imputation rule. They save per-reference C2ST, posterior mean shift,
+and covariance trace ratio against the full-observation reference posteriors.
 
 ### Zero-imputation + Mask Augmentation
 
@@ -612,15 +628,29 @@ x_aug = [x_imputed, mask]
 
 ```bash
 PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
-  --config experiments/npe_mask_augmentation/full_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
+  --config experiments/npe_mask_augmentation/high_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
 ```
 
-Low simulation budget:
+Mid and low simulation budgets:
 
 ```bash
 PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
+  --config experiments/npe_mask_augmentation/mid_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
+
+PYTHONPATH=src python experiments/npe_mask_augmentation/train.py \
   --config experiments/npe_mask_augmentation/low_sim_budget/oup/oup_npe_mask_augmentation_mcar_eps025_config.yaml
 ```
+
+Budget queues:
+
+```bash
+bash experiments/npe_mask_augmentation/npe_mask_augmentation_run_queue_high_sim_budget.sh
+bash experiments/npe_mask_augmentation/npe_mask_augmentation_run_queue_mid_sim_budget.sh
+bash experiments/npe_mask_augmentation/npe_mask_augmentation_run_queue_low_sim_budget.sh
+```
+
+These configs also evaluate the ten fixed reference observations after applying
+deterministic experiment-matched masks and concatenating `[zero_imputed_x, mask]`.
 
 ### Masked Embedding NPE
 
@@ -692,7 +722,9 @@ PYTHONPATH=src python experiments/npe_rise/train.py \
 - **Euclidean posterior mean shift**: Euclidean distance between posterior means. This is a simple location-shift diagnostic.
 - **Covariance trace ratio**: ratio of estimator posterior covariance trace to reference posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average; values below `1` indicate contraction.
 
-Reference posterior metrics are computed from existing posterior sample files and do not retrain models.
+Reference posterior metrics are saved by the current full-data and naive
+imputation training scripts. They can also be recomputed from saved posterior
+sample files without retraining.
 
 ## Benchmark Analysis Scripts
 
@@ -715,11 +747,11 @@ PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
   --out outputs_low_sim_budget/campaign1_master_results.csv
 ```
 
-Launch full-budget and low-budget queue scripts with the matching budget-specific queues, for example:
+Launch budget-specific queues, for example:
 
 ```bash
-bash experiments/npe_imputation/zero_imputation_oup_experiments_full_sim_budget.sh
-bash experiments/npe_imputation/zero_imputation_oup_experiments_low_sim_budget.sh
+bash experiments/npe_full_data/npe_full_data_run_queue_low_sim_budget.sh
+bash experiments/npe_imputation/npe_imputation_run_queue_low_sim_budget.sh
 ```
 
 Analyze stability and runtime across seeds/configurations:

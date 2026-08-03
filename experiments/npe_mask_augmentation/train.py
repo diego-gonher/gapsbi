@@ -19,9 +19,19 @@ from sbi.diagnostics import check_tarp
 from gapsbi.checkpointing import DEFAULT_CHECKPOINT_NAME, save_model_checkpoint
 from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+from gapsbi.evaluation.reference_metrics import compute_reference_metrics
 from gapsbi.evaluation.sbc import compute_sbc_ranks_from_samples
 from gapsbi.evaluation.tarp import compute_tarp_from_samples
 from gapsbi.io import load_gapsbi_hdf5
+from gapsbi.masks import (
+    CoordinateMARMask,
+    LotkaVolterraLogTotalMNARMask,
+    LotkaVolterraTimeBlockMCARMask,
+    LotkaVolterraTimeMARMask,
+    MeanNormalizedSelfCensoringMNARMask,
+    PointMCARMask,
+    SelfCensoringMNARMask,
+)
 from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_input
 from gapsbi.methods.sbi_npe import FixedSplitNPE_C
 from gapsbi.preprocessing.scalers import (
@@ -31,7 +41,10 @@ from gapsbi.preprocessing.scalers import (
     scale_theta_train_val_test,
     scale_x_obs_train_val_test_from_full_train,
     theta_scaling_metadata,
+    transform_x_obs_with_fitted_scaler,
 )
+from gapsbi.references import load_reference_posteriors_hdf5
+from gapsbi.simulators import GLMSimulator, LotkaVolterraSimulator
 from gapsbi.utils.seeding import set_all_seeds
 
 matplotlib.use("Agg")
@@ -142,6 +155,86 @@ def _count_trainable_parameters(module: Any) -> int:
     return int(sum(p.numel() for p in module.parameters() if p.requires_grad))
 
 
+def sample_tarp_references(
+    *,
+    problem: str,
+    num_references: int,
+    seed: int,
+    scaled_prior: torch.distributions.Distribution,
+    theta_scaler: Any,
+    config: dict[str, Any],
+) -> torch.Tensor:
+    """Sample TARP reference points in the same scaled coordinates as theta_eval."""
+    if problem == "glm":
+        rng = np.random.default_rng(seed)
+        theta = GLMSimulator(
+            dim=int(config.get("glm_dim", 10)),
+            duration=int(config.get("glm_duration", 100)),
+            summary=str(config.get("glm_summary", "raw")),
+        ).sample_theta(num_references, rng)
+        return torch.tensor(theta_scaler.transform(theta), dtype=torch.float32)
+
+    if problem == "lotka_volterra":
+        rng = np.random.default_rng(seed)
+        theta = LotkaVolterraSimulator().sample_theta(num_references, rng)
+        return torch.tensor(theta_scaler.transform(theta), dtype=torch.float32)
+
+    set_all_seeds(seed)
+    return scaled_prior.sample((num_references,)).detach().cpu()
+
+
+def mask_generator_from_metadata(mask_metadata: dict[str, Any]) -> Any:
+    """Rebuild the dataset mask generator for deterministic reference masking."""
+    name = str(mask_metadata.get("name", ""))
+    missing_fraction = float(mask_metadata["missing_fraction"])
+
+    if name == "point_mcar":
+        return PointMCARMask(missing_fraction=missing_fraction)
+    if name == "coordinate_mar":
+        return CoordinateMARMask(
+            missing_fraction=missing_fraction,
+            mode=str(mask_metadata.get("mode", "increasing")),
+            floor=float(mask_metadata.get("floor", 0.05)),
+            max_probability=float(mask_metadata.get("max_probability", 0.95)),
+            middle_width=float(mask_metadata.get("middle_width", 0.2)),
+        )
+    if name == "self_censoring_mnar":
+        return SelfCensoringMNARMask(
+            missing_fraction=missing_fraction,
+            eps=float(mask_metadata.get("eps", 1e-12)),
+            score_transform=str(mask_metadata.get("score_transform", "identity")),
+        )
+    if name == "self_censoring_mnar_mean_normalized":
+        return MeanNormalizedSelfCensoringMNARMask(
+            missing_fraction=missing_fraction,
+            eps=float(mask_metadata.get("eps", 1e-12)),
+            score_transform=str(mask_metadata.get("score_transform", "identity")),
+        )
+    if name == "lv_time_block_mcar":
+        return LotkaVolterraTimeBlockMCARMask(
+            missing_fraction=missing_fraction,
+            block_size=int(mask_metadata.get("block_size", 5)),
+            num_populations=int(mask_metadata.get("num_populations", 2)),
+        )
+    if name == "lv_time_mar":
+        return LotkaVolterraTimeMARMask(
+            missing_fraction=missing_fraction,
+            mode=str(mask_metadata.get("mode", "increasing")),
+            floor=float(mask_metadata.get("floor", 0.05)),
+            max_probability=float(mask_metadata.get("max_probability", 0.95)),
+            middle_width=float(mask_metadata.get("middle_width", 0.2)),
+            num_populations=int(mask_metadata.get("num_populations", 2)),
+        )
+    if name == "lv_log_total_mnar":
+        return LotkaVolterraLogTotalMNARMask(
+            missing_fraction=missing_fraction,
+            eps=float(mask_metadata.get("eps", 1e-12)),
+            num_populations=int(mask_metadata.get("num_populations", 2)),
+        )
+
+    raise ValueError(f"Unsupported mask generator in dataset metadata: {name!r}.")
+
+
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
@@ -154,6 +247,23 @@ def main() -> None:
     npe_cfg = config["npe"]
     eval_cfg = config["evaluation"]
     sampling_cfg = config.get("sampling", {})
+    reference_path = config.get("reference_path")
+    reference_mask_seed = int(config.get("reference_mask_seed", 987_654))
+    reference_num_posterior_samples = int(
+        config.get(
+            "reference_num_posterior_samples",
+            eval_cfg.get("reference_num_posterior_samples", eval_cfg["num_posterior_samples"]),
+        )
+    )
+    reference_metrics_cfg = config.get("reference_metrics", {})
+    c2st_max_samples_per_observation = reference_metrics_cfg.get(
+        "c2st_max_samples_per_observation", 2_000
+    )
+    if c2st_max_samples_per_observation is not None:
+        c2st_max_samples_per_observation = int(c2st_max_samples_per_observation)
+    c2st_n_folds = int(reference_metrics_cfg.get("c2st_n_folds", 3))
+    c2st_hidden_layer_scale = int(reference_metrics_cfg.get("c2st_hidden_layer_scale", 5))
+    c2st_max_iter = int(reference_metrics_cfg.get("c2st_max_iter", 10_000))
     reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
     max_sampling_time = sampling_cfg.get("max_sampling_time", None)
     if max_sampling_time is not None:
@@ -163,7 +273,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     problem = infer_problem_name(config.get("problem"), dataset_path)
-    dataset, _metadata = load_gapsbi_hdf5(dataset_path)
+    dataset, metadata = load_gapsbi_hdf5(dataset_path)
     dataset = apply_train_val_sample_limits(
         dataset,
         max_train_samples=max_train_samples,
@@ -364,8 +474,14 @@ def main() -> None:
         # Time diagnostics: TARP/SBC computations and diagnostic artifacts.
         diagnostics_start = time.perf_counter()
 
-        set_all_seeds(seed + 20_000)
-        references = prior.sample((test_sample,)).detach().cpu()
+        references = sample_tarp_references(
+            problem=problem,
+            num_references=test_sample,
+            seed=seed + 20_000,
+            scaled_prior=prior,
+            theta_scaler=theta_scaler,
+            config=config,
+        )
         ecp, alpha, tarp_probs = compute_tarp_from_samples(
             posterior_samples=posterior_samples_scaled,
             theta_eval=theta_eval,
@@ -451,6 +567,12 @@ def main() -> None:
             "fallback_sampling_used": bool(fallback_sampling_used),
             "tarp_atc": float(atc),
             "tarp_ks_pvalue": float(ks_pval),
+            "tarp_reference_space": "theta_scaled",
+            "tarp_reference_distribution": (
+                "true_simulator_prior_scaled"
+                if problem in {"glm", "lotka_volterra"}
+                else "scaled_npe_prior"
+            ),
             "num_tarp_eval": int(test_sample),
             "num_tarp_posterior_samples": int(num_posterior_samples),
             "num_sbc_eval": int(test_sample),
@@ -462,6 +584,160 @@ def main() -> None:
             "sbc_plot_path": str(sbc_plot_path),
             "diagnostics_arrays_path": str(diagnostics_arrays_path),
         }
+
+        reference_sampling_time_sec: float | None = None
+        reference_posterior_samples_path: Path | None = None
+        reference_num_sampling_failures: int | None = None
+        reference_num_sampling_fallbacks: int | None = None
+        reference_fallback_sampling_used: bool | None = None
+        if reference_path:
+            ref_observations, ref_theta_samples, ref_metadata, _ref_diagnostics = (
+                load_reference_posteriors_hdf5(reference_path)
+            )
+            if str(ref_metadata.get("problem", "")).lower() != problem:
+                raise ValueError(
+                    f"Reference problem {ref_metadata.get('problem')!r} does not "
+                    f"match config problem {problem!r}."
+                )
+            if "mask" not in metadata or not isinstance(metadata["mask"], dict):
+                raise ValueError(
+                    "Dataset metadata must include a mask dictionary to evaluate "
+                    "reference observations under mask augmentation."
+                )
+
+            ref_mask_generator = mask_generator_from_metadata(metadata["mask"])
+            ref_rng = np.random.default_rng(reference_mask_seed)
+            ref_mask = ref_mask_generator.generate(
+                x_full=ref_observations["x_full"],
+                theta=ref_observations["theta_true"],
+                rng=ref_rng,
+            )
+            ref_x_obs = ref_observations["x_full"] * ref_mask
+            ref_x_obs_scaled = transform_x_obs_with_fitted_scaler(
+                x_obs=ref_x_obs,
+                mask=ref_mask,
+                x_scaler=x_scaler,
+                transform=x_transform,
+            )
+            ref_mask_tensor = torch.tensor(ref_mask, dtype=torch.float32)
+            x_ref = make_zero_imputed_mask_augmented_input(
+                x_obs_scaled=ref_x_obs_scaled,
+                mask=ref_mask_tensor,
+            )
+
+            print(
+                "Reference masks: "
+                f"missing_fraction={1.0 - float(np.mean(ref_mask)):.4f}, "
+                f"seed={reference_mask_seed}"
+            )
+
+            reference_sampling_start = time.perf_counter()
+            (
+                reference_samples_scaled,
+                reference_num_sampling_failures,
+                reference_num_sampling_fallbacks,
+                reference_fallback_sampling_used,
+            ) = sample_posteriors_once(
+                posterior=posterior,
+                x_eval=x_ref,
+                num_posterior_samples=reference_num_posterior_samples,
+                seed=seed + 30_000,
+                reject_outside_prior=reject_outside_prior,
+                max_sampling_time=max_sampling_time,
+                return_num_sampling_failures=True,
+            )
+            reference_sampling_end = time.perf_counter()
+            reference_sampling_time_sec = reference_sampling_end - reference_sampling_start
+
+            reference_samples_scaled_np = reference_samples_scaled.detach().cpu().numpy()
+            num_ref_eval, num_ref_samples, ref_theta_dim = reference_samples_scaled_np.shape
+            reference_samples_np = theta_scaler.inverse_transform(
+                reference_samples_scaled_np.reshape(-1, ref_theta_dim)
+            ).reshape(num_ref_eval, num_ref_samples, ref_theta_dim)
+            if reference_samples_np.shape != ref_theta_samples.shape:
+                raise ValueError(
+                    "Estimator reference posterior samples must match reference "
+                    f"posterior shape exactly, got estimator={reference_samples_np.shape} "
+                    f"and reference={ref_theta_samples.shape}."
+                )
+
+            reference_posterior_samples_path = seed_output_dir / "reference_posterior_samples.h5"
+            with h5py.File(reference_posterior_samples_path, "w") as f:
+                f.create_dataset("theta_true", data=ref_observations["theta_true"])
+                f.create_dataset("x_full", data=ref_observations["x_full"])
+                f.create_dataset("mask", data=ref_mask)
+                f.create_dataset("x_obs", data=ref_x_obs)
+                f.create_dataset("theta_posterior", data=reference_samples_np)
+                f.create_dataset("theta_posterior_scaled", data=reference_samples_scaled_np)
+                f.attrs["dataset_path"] = str(dataset_path)
+                f.attrs["reference_path"] = str(reference_path)
+                f.attrs["problem"] = problem
+                f.attrs["method"] = method_name
+                f.attrs["seed"] = int(seed)
+                f.attrs["reference_mask_seed"] = int(reference_mask_seed)
+                f.attrs["reference_mask_missing_fraction"] = float(1.0 - np.mean(ref_mask))
+                f.attrs["reference_metric_target"] = (
+                    "masked_augmented_x_vs_full_x_reference"
+                )
+                f.attrs["num_eval"] = int(num_ref_eval)
+                f.attrs["num_posterior_samples"] = int(num_ref_samples)
+                f.attrs["theta_dim"] = int(ref_theta_dim)
+                f.attrs["theta_transform"] = theta_scaling_metadata_dict["transform"]
+                f.attrs["x_transform"] = x_scaling_metadata["transform"]
+
+            reference_metrics_start = time.perf_counter()
+            reference_metric_rows = compute_reference_metrics(
+                estimator_samples=reference_samples_np,
+                reference_samples=ref_theta_samples,
+                seed=seed + 40_000,
+                max_samples_per_observation=num_ref_samples,
+                c2st_max_samples_per_observation=c2st_max_samples_per_observation,
+                c2st_n_folds=c2st_n_folds,
+                c2st_hidden_layer_scale=c2st_hidden_layer_scale,
+                c2st_max_iter=c2st_max_iter,
+                progress=True,
+            )
+            reference_metrics_time_sec = time.perf_counter() - reference_metrics_start
+
+            summary.update(
+                {
+                    "reference_path": str(reference_path),
+                    "reference_posterior_samples_path": str(reference_posterior_samples_path),
+                    "reference_metric_target": "masked_augmented_x_vs_full_x_reference",
+                    "reference_mask_seed": int(reference_mask_seed),
+                    "reference_mask_name": str(metadata["mask"].get("name", "")),
+                    "reference_mask_missing_fraction": float(1.0 - np.mean(ref_mask)),
+                    "num_reference_eval": int(num_ref_eval),
+                    "num_reference_posterior_samples": int(num_ref_samples),
+                    "reference_posterior_sampling_time_sec": float(reference_sampling_time_sec),
+                    "reference_num_sampling_failures": int(reference_num_sampling_failures),
+                    "reference_num_sampling_fallbacks": int(reference_num_sampling_fallbacks),
+                    "reference_fallback_sampling_used": bool(reference_fallback_sampling_used),
+                    "reference_metrics_time_sec": float(reference_metrics_time_sec),
+                    "reference_metrics_space": "theta_unscaled",
+                    "reference_metrics_num_samples_used": [
+                        int(row["num_samples_used"]) for row in reference_metric_rows
+                    ],
+                    "reference_metrics_c2st_num_samples_used": [
+                        int(row["c2st_num_samples_used"]) for row in reference_metric_rows
+                    ],
+                    "reference_metrics_c2st_n_folds": int(c2st_n_folds),
+                    "reference_metrics_c2st_hidden_layer_scale": int(c2st_hidden_layer_scale),
+                    "reference_metrics_c2st_max_iter": int(c2st_max_iter),
+                    "reference_metrics_reference_index": [
+                        int(row["reference_index"]) for row in reference_metric_rows
+                    ],
+                    "reference_c2st_accuracy": [
+                        float(row["c2st_accuracy"]) for row in reference_metric_rows
+                    ],
+                    "reference_posterior_mean_shift": [
+                        float(row["posterior_mean_shift"]) for row in reference_metric_rows
+                    ],
+                    "reference_covariance_trace_ratio": [
+                        float(row["covariance_trace_ratio"]) for row in reference_metric_rows
+                    ],
+                }
+            )
         diagnostics_end = time.perf_counter()
         diagnostics_time_sec = diagnostics_end - diagnostics_start
         total_end = time.perf_counter()

@@ -1,0 +1,28 @@
+dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps025_seed123.h5
+problem: oup
+output_dir: outputs_high_sim_budget/npe_zero_imputation/oup/mcar/oup_mcar_eps025
+seeds:
+- 101
+- 202
+- 303
+- 404
+- 505
+reference_path: references/reference_posteriors_v1/oup_references.h5
+reference_mask_seed: 987654
+reference_num_posterior_samples: 10000
+reference_metrics:
+  c2st_max_samples_per_observation: 2000
+  c2st_n_folds: 3
+  c2st_hidden_layer_scale: 5
+npe:
+  density_estimator: nsf
+  device: cpu
+  training_batch_size: 256
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+evaluation:
+  test_sample: 1000
+  num_posterior_samples: 1000
+  num_alpha_grid: 101
+imputation:
+  method: zero
