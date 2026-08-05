@@ -40,7 +40,7 @@ def sample_posteriors_once(
                 show_progress_bars=False,
                 **safe_kwargs,
             )
-        except (RuntimeError, TypeError) as primary_error:
+        except (AssertionError, RuntimeError, TypeError, ValueError) as primary_error:
             num_sampling_failures += 1
             num_sampling_fallbacks += 1
             print(
@@ -56,7 +56,7 @@ def sample_posteriors_once(
                     show_progress_bars=False,
                     **fallback_kwargs,
                 )
-            except (RuntimeError, TypeError) as fallback_error:
+            except (AssertionError, RuntimeError, TypeError, ValueError) as fallback_error:
                 print(
                     "[posterior_sampling] Fallback failed "
                     f"for x index {i}; filling NaNs: {fallback_error}"

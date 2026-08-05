@@ -55,7 +55,7 @@ Implemented methods:
 - Masked-pooling embedding NPE
 - Masked-attention embedding NPE
 - Learned-imputation NPE
-- GAPSBI-native RISE-style probabilistic imputation + NPE
+- Probabilistic learned-imputation NPE
 
 Implemented evaluation and analysis:
 
@@ -100,7 +100,7 @@ Methods:
 - Masked-pooling embedding NPE
 - Masked-attention embedding NPE
 - Learned-imputation NPE
-- GAPSBI-native RISE-style probabilistic imputation + NPE
+- Probabilistic learned-imputation NPE
 
 The current experiment plan uses five fixed training seeds and three nested
 simulation-budget regimes over the same canonical HDF5 datasets:
@@ -721,20 +721,21 @@ PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
   --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
 ```
 
-### NPE RISE-style Probabilistic Imputation
+### Probabilistic Learned-imputation NPE
 
-Trains a lightweight probabilistic MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, predicts a Gaussian completion distribution for `x`, and the NPE loss is optimized on completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
+Trains a RISE-inspired latent MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, samples a latent `z`, predicts a Gaussian completion distribution for `x`, and optimizes the NPE loss on mean-completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
 
 ```bash
-PYTHONPATH=src python experiments/npe_rise/train.py \
-  --config experiments/npe_rise/full_sim_budget/oup/oup_npe_rise_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_probabilistic_learned_imputation/train.py \
+  --config experiments/npe_probabilistic_learned_imputation/high_sim_budget/oup/oup_npe_probabilistic_learned_imputation_mcar_eps025_config.yaml
 ```
 
-Low simulation budget:
+Budget queues:
 
 ```bash
-PYTHONPATH=src python experiments/npe_rise/train.py \
-  --config experiments/npe_rise/low_sim_budget/oup/oup_npe_rise_mcar_eps025_config.yaml
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_low_sim_budget.sh
 ```
 
 ## Evaluation Metrics
@@ -910,7 +911,7 @@ experiments/
   npe_mask_augmentation/         # Zero-imputation + mask baseline
   npe_masked_embedding/          # Masked pooling/attention embedding NPE baselines
   npe_learned_imputation/        # Learned-imputation baseline
-  npe_rise/                      # GAPSBI-native RISE-style imputation + NPE
+  npe_probabilistic_learned_imputation/ # Probabilistic learned-imputation NPE
 outputs_high_sim_budget/         # High simulation-budget outputs
 outputs_mid_sim_budget/          # Mid simulation-budget outputs
 outputs_low_sim_budget/          # Low simulation-budget outputs

@@ -20,6 +20,9 @@ class RISEOutput:
     std: torch.Tensor
     completed_x: torch.Tensor
     mask_logits: Optional[torch.Tensor] = None
+    latent_loc: Optional[torch.Tensor] = None
+    latent_std: Optional[torch.Tensor] = None
+    latent_sample: Optional[torch.Tensor] = None
 
 
 @dataclass
@@ -38,7 +41,7 @@ class RISEResult:
 
 
 class RISEImputerMLP(nn.Module):
-    """Lightweight probabilistic MLP imputer for RISE-style training."""
+    """MLP latent neural-process-style imputer for RISE-inspired training."""
 
     def __init__(
         self,
@@ -76,14 +79,18 @@ class RISEImputerMLP(nn.Module):
             if dropout > 0:
                 layers.append(nn.Dropout(dropout))
             current_dim = hidden_dim
-        layers.append(nn.Linear(current_dim, latent_dim))
-        layers.append(nn.ReLU())
         self.encoder = nn.Sequential(*layers)
 
-        self.mean_head = nn.Linear(latent_dim, self.input_dim)
-        self.log_std_head = nn.Linear(latent_dim, self.input_dim)
+        self.latent_loc_head = nn.Linear(current_dim, latent_dim)
+        self.latent_log_std_head = nn.Linear(current_dim, latent_dim)
+        self.decoder = nn.Sequential(
+            nn.Linear(current_dim + latent_dim, hidden_dim),
+            nn.ReLU(),
+        )
+        self.mean_head = nn.Linear(hidden_dim, self.input_dim)
+        self.log_std_head = nn.Linear(hidden_dim, self.input_dim)
         self.mask_head = (
-            nn.Linear(latent_dim, self.input_dim) if self.use_mask_head else None
+            nn.Linear(current_dim, self.input_dim) if self.use_mask_head else None
         )
 
     def forward(self, x_obs: torch.Tensor, mask: torch.Tensor) -> RISEOutput:
@@ -91,8 +98,12 @@ class RISEImputerMLP(nn.Module):
         mask = mask.to(dtype=x_obs.dtype, device=x_obs.device)
 
         hidden = self.encoder(torch.cat([x_obs, mask], dim=-1))
-        mean = self.mean_head(hidden)
-        std = F.softplus(self.log_std_head(hidden)) + self.min_std
+        latent_loc = self.latent_loc_head(hidden)
+        latent_std = F.softplus(self.latent_log_std_head(hidden)) + self.min_std
+        latent_sample = latent_loc + latent_std * torch.randn_like(latent_std)
+        decoded = self.decoder(torch.cat([hidden, latent_sample], dim=-1))
+        mean = self.mean_head(decoded)
+        std = F.softplus(self.log_std_head(decoded)) + self.min_std
         completed_x = mask * x_obs + (1.0 - mask) * mean
         mask_logits = self.mask_head(hidden) if self.mask_head is not None else None
 
@@ -101,6 +112,9 @@ class RISEImputerMLP(nn.Module):
             std=std,
             completed_x=completed_x,
             mask_logits=mask_logits,
+            latent_loc=latent_loc,
+            latent_std=latent_std,
+            latent_sample=latent_sample,
         )
 
 
@@ -128,7 +142,7 @@ def train_rise_npe(
     num_layers: int = 2,
     dropout: float = 0.0,
     latent_dim: int = 16,
-    lambda_np: float = 1.0,
+    lambda_np: float = 100.0,
     lambda_mask: float = 1.0,
     use_mask_head: bool = False,
     min_std: float = 1e-3,

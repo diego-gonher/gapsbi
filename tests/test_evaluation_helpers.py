@@ -149,3 +149,26 @@ def test_compute_tarp_from_samples_shapes_and_bounds() -> None:
     assert torch.all((tarp_probs >= 0.0) & (tarp_probs <= 1.0))
     assert torch.isclose(alpha[0], torch.tensor(0.0))
     assert torch.isclose(alpha[-1], torch.tensor(1.0))
+
+
+def test_sample_posteriors_once_records_assertion_failures() -> None:
+    from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+
+    class AssertionPosterior:
+        def sample(self, *args, **kwargs):
+            raise AssertionError("spline discriminant failure")
+
+    x_eval = torch.zeros(2, 3)
+    samples, failures, fallbacks, fallback_used = sample_posteriors_once(
+        posterior=AssertionPosterior(),
+        x_eval=x_eval,
+        num_posterior_samples=4,
+        seed=123,
+        return_num_sampling_failures=True,
+    )
+
+    assert samples.shape == (2, 4, 3)
+    assert torch.isnan(samples).all()
+    assert failures == 2
+    assert fallbacks == 2
+    assert fallback_used

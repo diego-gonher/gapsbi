@@ -18,6 +18,11 @@ def test_rise_imputer_output_shapes() -> None:
     assert output.std.shape == (3, 5)
     assert output.completed_x.shape == (3, 5)
     assert output.mask_logits is None
+    assert output.latent_loc is not None
+    assert output.latent_std is not None
+    assert output.latent_sample is not None
+    assert output.latent_loc.shape == (3, 4)
+    assert output.latent_sample.shape == (3, 4)
 
 
 def test_rise_imputer_std_is_strictly_positive() -> None:

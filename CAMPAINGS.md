@@ -31,7 +31,7 @@ Five Training Seeds:
 2. Per-Feature Mean Imputation NPE (left to appendix; DONE)
 3. Zero-imputation + mask augmentation NPE (Wang et al. 2024)
 4. Per-Feautre Learned Imputation with NPE (Lueckman et al. 2017)
-5. RISE based NPE
+5. Probabilistic Learned Imputation NPE (RISE-inspired)
 6. Transfomer Embeddings with NPE
 
 Here is another way of conceptualizing these methods:
@@ -43,7 +43,7 @@ Here is another way of conceptualizing these methods:
 | | Per-feature Mean Imputation | Fill with empirical feature means. |
 | **Learned deterministic imputation** | Learned Per-feature Imputation | Learn fixed replacement values jointly with NPE. |
 | **Imputation + missingness indicators** | Zero Imputation + Mask Augmentation | Keep naive imputation but explicitly tell the network what was missing. |
-| **Probabilistic imputation** | RISE | Learn \(p(x_{\rm miss}\mid x_{\rm obs})\) and marginalize posterior uncertainty. |
+| **Probabilistic imputation** | Probabilistic Learned Imputation | Learn \(p(x_{\rm miss}\mid x_{\rm obs})\) with a RISE-inspired latent imputer. |
 | **Representation learning** | Transformer Embedding + NPE | Never reconstruct missing values; directly learn a representation robust to masks. |
 
 Simulation budgets:
