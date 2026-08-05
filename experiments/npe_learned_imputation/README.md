@@ -1,6 +1,9 @@
 # NPE Learned Imputation Experiment
 
-Deterministic learned imputation + NPE baseline (Lueckmann-style / NPE-NN).
+Deterministic input-dependent learned imputation + NPE baseline.
+
+This is not the Lueckmann-style learned constant baseline. For that method, use
+`experiments/npe_learned_constant_imputation/`.
 
 This baseline jointly trains:
 

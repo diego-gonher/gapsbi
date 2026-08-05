@@ -50,6 +50,7 @@ Implemented methods:
 - Full-data NPE
 - Zero-imputation NPE
 - Mean-imputation NPE
+- Learned-constant imputation NPE
 - Zero-imputation + mask augmentation NPE
 - Masked-pooling embedding NPE
 - Masked-attention embedding NPE
@@ -621,6 +622,29 @@ These configs also sample 10,000 posterior draws for the ten fixed reference
 observations after applying deterministic experiment-matched masks and the
 configured imputation rule. They save per-reference C2ST, posterior mean shift,
 and covariance trace ratio against the full-observation reference posteriors.
+
+### Learned-constant Imputation NPE
+
+Learns one scalar replacement value per observation feature in scaled x-space and
+trains the same NSF-NPE backbone on the completed observations. This is the
+Lueckmann-style learned constant baseline:
+
+```text
+x_completed = mask * x_obs_scaled + (1 - mask) * c
+```
+
+```bash
+PYTHONPATH=src python experiments/npe_learned_constant_imputation/train.py \
+  --config experiments/npe_learned_constant_imputation/high_sim_budget/oup/oup_npe_learned_constant_imputation_mcar_eps025_config.yaml
+```
+
+Budget queues:
+
+```bash
+bash experiments/npe_learned_constant_imputation/npe_learned_constant_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_learned_constant_imputation/npe_learned_constant_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_learned_constant_imputation/npe_learned_constant_imputation_run_queue_low_sim_budget.sh
+```
 
 ### Zero-imputation + Mask Augmentation
 
