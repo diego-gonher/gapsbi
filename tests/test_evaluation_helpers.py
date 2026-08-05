@@ -172,3 +172,34 @@ def test_sample_posteriors_once_records_assertion_failures() -> None:
     assert failures == 2
     assert fallbacks == 2
     assert fallback_used
+
+
+def test_sample_posteriors_once_falls_back_on_nonfinite_samples() -> None:
+    from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+
+    class NonfiniteThenFinitePosterior:
+        def __init__(self) -> None:
+            self.num_calls = 0
+
+        def sample(self, shape, x, show_progress_bars=False, **kwargs):
+            del show_progress_bars, kwargs
+            self.num_calls += 1
+            num = int(shape[0])
+            if self.num_calls == 1:
+                return torch.full((num, x.shape[-1]), float("inf"))
+            return torch.zeros(num, x.shape[-1])
+
+    x_eval = torch.zeros(1, 3)
+    samples, failures, fallbacks, fallback_used = sample_posteriors_once(
+        posterior=NonfiniteThenFinitePosterior(),
+        x_eval=x_eval,
+        num_posterior_samples=4,
+        seed=123,
+        return_num_sampling_failures=True,
+    )
+
+    assert samples.shape == (1, 4, 3)
+    assert torch.isfinite(samples).all()
+    assert failures == 1
+    assert fallbacks == 1
+    assert fallback_used

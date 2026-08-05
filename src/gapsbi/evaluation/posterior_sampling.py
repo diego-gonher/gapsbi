@@ -40,6 +40,7 @@ def sample_posteriors_once(
                 show_progress_bars=False,
                 **safe_kwargs,
             )
+            samples_i = _validate_posterior_samples(samples_i, x_index=i)
         except (AssertionError, RuntimeError, TypeError, ValueError) as primary_error:
             num_sampling_failures += 1
             num_sampling_fallbacks += 1
@@ -56,6 +57,7 @@ def sample_posteriors_once(
                     show_progress_bars=False,
                     **fallback_kwargs,
                 )
+                samples_i = _validate_posterior_samples(samples_i, x_index=i)
             except (AssertionError, RuntimeError, TypeError, ValueError) as fallback_error:
                 print(
                     "[posterior_sampling] Fallback failed "
@@ -102,6 +104,18 @@ def _build_fallback_kwargs(supported_kwargs: set[str]) -> dict[str, object]:
     if "sample_with" in supported_kwargs:
         kwargs["sample_with"] = "direct"
     return kwargs
+
+
+def _validate_posterior_samples(samples: torch.Tensor, x_index: int) -> torch.Tensor:
+    if not torch.is_tensor(samples):
+        samples = torch.as_tensor(samples)
+    if not torch.isfinite(samples).all():
+        num_bad = int((~torch.isfinite(samples)).sum().item())
+        raise ValueError(
+            "posterior.sample returned "
+            f"{num_bad} non-finite values for x index {x_index}"
+        )
+    return samples
 
 
 def _infer_theta_dim(
