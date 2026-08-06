@@ -13,8 +13,9 @@ def sample_posteriors_once(
     x_eval: torch.Tensor,
     num_posterior_samples: int,
     seed: int,
-    reject_outside_prior: bool = False,
-    max_sampling_time: float | None = None,
+    reject_outside_prior: bool = True,
+    max_sampling_time: float | None = 30.0,
+    fallback_to_direct: bool = False,
     return_num_sampling_failures: bool = False,
 ) -> torch.Tensor | tuple[torch.Tensor, int, int, bool]:
     """Sample posterior once for every fixed evaluation observation."""
@@ -49,19 +50,36 @@ def sample_posteriors_once(
                 f"for x index {i}: {primary_error}"
             )
 
-            fallback_kwargs = _build_fallback_kwargs(supported_kwargs)
-            try:
-                samples_i = posterior.sample(
-                    (num_posterior_samples,),
-                    x=x_eval[i],
-                    show_progress_bars=False,
-                    **fallback_kwargs,
-                )
-                samples_i = _validate_posterior_samples(samples_i, x_index=i)
-            except (AssertionError, RuntimeError, TypeError, ValueError) as fallback_error:
+            if fallback_to_direct:
+                fallback_kwargs = _build_fallback_kwargs(supported_kwargs)
+                try:
+                    samples_i = posterior.sample(
+                        (num_posterior_samples,),
+                        x=x_eval[i],
+                        show_progress_bars=False,
+                        **fallback_kwargs,
+                    )
+                    samples_i = _validate_posterior_samples(samples_i, x_index=i)
+                except (
+                    AssertionError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ) as fallback_error:
+                    print(
+                        "[posterior_sampling] Fallback failed "
+                        f"for x index {i}; filling NaNs: {fallback_error}"
+                    )
+                    theta_dim = _infer_theta_dim(posterior, posterior_samples, x_eval)
+                    samples_i = torch.full(
+                        (num_posterior_samples, theta_dim),
+                        float("nan"),
+                        dtype=torch.float32,
+                    )
+            else:
                 print(
-                    "[posterior_sampling] Fallback failed "
-                    f"for x index {i}; filling NaNs: {fallback_error}"
+                    "[posterior_sampling] Filling NaNs "
+                    f"for x index {i} after sampling failure."
                 )
                 theta_dim = _infer_theta_dim(posterior, posterior_samples, x_eval)
                 samples_i = torch.full(
