@@ -163,34 +163,6 @@ def compute_reference_metrics(
         estimator_c2st = subsample_rows(estimator[obs_idx], c2st_sample_count, c2st_rng)
         reference_c2st = subsample_rows(reference[obs_idx], c2st_sample_count, c2st_rng)
 
-        if progress:
-            print(
-                "reference "
-                f"{obs_idx + 1}/{estimator.shape[0]}: computing metrics "
-                f"(C2ST samples={c2st_sample_count}, moment samples={sample_count})",
-                flush=True,
-            )
-
-        c2st_value = c2st_accuracy(
-            reference_c2st,
-            estimator_c2st,
-            seed=seed + obs_idx,
-            test_size=c2st_test_size,
-            n_folds=c2st_n_folds,
-            hidden_layer_scale=c2st_hidden_layer_scale,
-            max_iter=c2st_max_iter,
-        )
-        mean_shift_value = posterior_mean_shift(estimator_obs, reference_obs)
-        trace_ratio_value = covariance_trace_ratio(estimator_obs, reference_obs)
-        if progress:
-            print(
-                "reference "
-                f"{obs_idx + 1}/{estimator.shape[0]}: done "
-                f"c2st={c2st_value:.4f}, "
-                f"mean_shift={mean_shift_value:.4g}, "
-                f"trace_ratio={trace_ratio_value:.4g}",
-                flush=True,
-            )
         row = {
             "reference_index": obs_idx,
             "theta_dim": int(estimator.shape[2]),
@@ -200,10 +172,67 @@ def compute_reference_metrics(
             "c2st_num_samples_used": int(c2st_sample_count),
             "c2st_n_folds": int(c2st_n_folds),
             "c2st_hidden_layer_scale": int(c2st_hidden_layer_scale),
-            "c2st_accuracy": c2st_value,
-            "posterior_mean_shift": mean_shift_value,
-            "covariance_trace_ratio": trace_ratio_value,
         }
+
+        if progress:
+            print(
+                "reference "
+                f"{obs_idx + 1}/{estimator.shape[0]}: computing metrics "
+                f"(C2ST samples={c2st_sample_count}, moment samples={sample_count})",
+                flush=True,
+            )
+
+        try:
+            c2st_value = c2st_accuracy(
+                reference_c2st,
+                estimator_c2st,
+                seed=seed + obs_idx,
+                test_size=c2st_test_size,
+                n_folds=c2st_n_folds,
+                hidden_layer_scale=c2st_hidden_layer_scale,
+                max_iter=c2st_max_iter,
+            )
+            mean_shift_value = posterior_mean_shift(estimator_obs, reference_obs)
+            trace_ratio_value = covariance_trace_ratio(estimator_obs, reference_obs)
+            row.update(
+                {
+                    "reference_metrics_valid": True,
+                    "reference_metrics_error": "",
+                    "c2st_accuracy": c2st_value,
+                    "posterior_mean_shift": mean_shift_value,
+                    "covariance_trace_ratio": trace_ratio_value,
+                }
+            )
+        except ValueError as error:
+            c2st_value = float("nan")
+            mean_shift_value = float("nan")
+            trace_ratio_value = float("nan")
+            row.update(
+                {
+                    "reference_metrics_valid": False,
+                    "reference_metrics_error": str(error),
+                    "c2st_accuracy": c2st_value,
+                    "posterior_mean_shift": mean_shift_value,
+                    "covariance_trace_ratio": trace_ratio_value,
+                }
+            )
+        if progress:
+            if row["reference_metrics_valid"]:
+                print(
+                    "reference "
+                    f"{obs_idx + 1}/{estimator.shape[0]}: done "
+                    f"c2st={c2st_value:.4f}, "
+                    f"mean_shift={mean_shift_value:.4g}, "
+                    f"trace_ratio={trace_ratio_value:.4g}",
+                    flush=True,
+                )
+            else:
+                print(
+                    "reference "
+                    f"{obs_idx + 1}/{estimator.shape[0]}: skipped metrics: "
+                    f"{row['reference_metrics_error']}",
+                    flush=True,
+                )
         rows.append(row)
     return rows
 
@@ -265,8 +294,6 @@ def validate_posterior_array(samples: np.ndarray, name: str) -> np.ndarray:
         raise ValueError(f"{name} must have shape (num_observations, num_samples, theta_dim).")
     if arr.shape[0] <= 0 or arr.shape[1] < 2 or arr.shape[2] <= 0:
         raise ValueError(f"{name} has invalid shape {arr.shape}.")
-    if not np.all(np.isfinite(arr)):
-        raise ValueError(f"{name} must contain only finite values.")
     return arr
 
 

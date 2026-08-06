@@ -68,6 +68,30 @@ def test_compute_reference_metrics_returns_one_row_per_observation() -> None:
     assert math.isfinite(rows[0]["covariance_trace_ratio"])
 
 
+def test_compute_reference_metrics_marks_nonfinite_observations_invalid() -> None:
+    rng = np.random.default_rng(123)
+    reference = rng.normal(size=(2, 30, 2))
+    estimator = reference + 0.1
+    estimator[1, :, :] = np.nan
+
+    rows = compute_reference_metrics(
+        estimator,
+        reference,
+        seed=5,
+        max_samples_per_observation=20,
+        c2st_n_folds=5,
+        c2st_max_iter=500,
+    )
+
+    assert len(rows) == 2
+    assert rows[0]["reference_metrics_valid"] is True
+    assert rows[1]["reference_metrics_valid"] is False
+    assert "finite" in rows[1]["reference_metrics_error"]
+    assert math.isnan(rows[1]["c2st_accuracy"])
+    assert math.isnan(rows[1]["posterior_mean_shift"])
+    assert math.isnan(rows[1]["covariance_trace_ratio"])
+
+
 def test_aggregate_reference_metrics_groups_and_reports_se() -> None:
     rows = [
         {"method": "a", "seed": 1, "reference_index": 0, "c2st_accuracy": 0.6, "posterior_mean_shift": 1.0, "covariance_trace_ratio": 2.0},
