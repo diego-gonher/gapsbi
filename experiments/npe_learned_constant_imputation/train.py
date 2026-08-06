@@ -126,7 +126,6 @@ def main() -> None:
     max_sampling_time = sampling_cfg.get("max_sampling_time", 30.0)
     if max_sampling_time is not None:
         max_sampling_time = float(max_sampling_time)
-    fallback_to_direct = bool(sampling_cfg.get("fallback_to_direct", False))
 
     method_name = "npe_learned_constant_imputation"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -243,7 +242,6 @@ def main() -> None:
             seed=seed + 10_000,
             reject_outside_prior=reject_outside_prior,
             max_sampling_time=max_sampling_time,
-            fallback_to_direct=fallback_to_direct,
             return_num_sampling_failures=True,
         )
         posterior_sampling_time_sec = time.perf_counter() - sampling_start
@@ -365,7 +363,6 @@ def main() -> None:
             "learned_constants_scaled_std": float(np.std(learned_constants_scaled)),
             "reject_outside_prior": bool(reject_outside_prior),
             "max_sampling_time": max_sampling_time,
-            "fallback_to_direct": bool(fallback_to_direct),
             "num_sampling_failures": int(num_sampling_failures),
             "num_sampling_fallbacks": int(num_sampling_fallbacks),
             "fallback_sampling_used": bool(fallback_sampling_used),
@@ -445,7 +442,6 @@ def main() -> None:
                 seed=seed + 30_000,
                 reject_outside_prior=reject_outside_prior,
                 max_sampling_time=max_sampling_time,
-                fallback_to_direct=fallback_to_direct,
                 return_num_sampling_failures=True,
             )
             reference_sampling_time_sec = time.perf_counter() - reference_sampling_start

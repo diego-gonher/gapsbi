@@ -15,7 +15,6 @@ def sample_posteriors_once(
     seed: int,
     reject_outside_prior: bool = True,
     max_sampling_time: float | None = 30.0,
-    fallback_to_direct: bool = False,
     return_num_sampling_failures: bool = False,
 ) -> torch.Tensor | tuple[torch.Tensor, int, int, bool]:
     """Sample posterior once for every fixed evaluation observation."""
@@ -45,48 +44,17 @@ def sample_posteriors_once(
         except (AssertionError, RuntimeError, TypeError, ValueError) as primary_error:
             num_sampling_failures += 1
             num_sampling_fallbacks += 1
+            print(f"[posterior_sampling] Sampling failed for x index {i}: {primary_error}")
             print(
-                "[posterior_sampling] Sampling fallback "
-                f"for x index {i}: {primary_error}"
+                "[posterior_sampling] Filling NaNs "
+                f"for x index {i} after sampling failure."
             )
-
-            if fallback_to_direct:
-                fallback_kwargs = _build_fallback_kwargs(supported_kwargs)
-                try:
-                    samples_i = posterior.sample(
-                        (num_posterior_samples,),
-                        x=x_eval[i],
-                        show_progress_bars=False,
-                        **fallback_kwargs,
-                    )
-                    samples_i = _validate_posterior_samples(samples_i, x_index=i)
-                except (
-                    AssertionError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ) as fallback_error:
-                    print(
-                        "[posterior_sampling] Fallback failed "
-                        f"for x index {i}; filling NaNs: {fallback_error}"
-                    )
-                    theta_dim = _infer_theta_dim(posterior, posterior_samples, x_eval)
-                    samples_i = torch.full(
-                        (num_posterior_samples, theta_dim),
-                        float("nan"),
-                        dtype=torch.float32,
-                    )
-            else:
-                print(
-                    "[posterior_sampling] Filling NaNs "
-                    f"for x index {i} after sampling failure."
-                )
-                theta_dim = _infer_theta_dim(posterior, posterior_samples, x_eval)
-                samples_i = torch.full(
-                    (num_posterior_samples, theta_dim),
-                    float("nan"),
-                    dtype=torch.float32,
-                )
+            theta_dim = _infer_theta_dim(posterior, posterior_samples, x_eval)
+            samples_i = torch.full(
+                (num_posterior_samples, theta_dim),
+                float("nan"),
+                dtype=torch.float32,
+            )
         posterior_samples.append(samples_i.detach().cpu())
 
     stacked = torch.stack(posterior_samples, dim=0)
@@ -109,19 +77,8 @@ def _supported_sampling_kwargs(sample_fn) -> set[str]:
         for p in signature.parameters.values()
     )
     if supports_var_kwargs:
-        return {"reject_outside_prior", "max_sampling_time", "sample_with"}
+        return {"reject_outside_prior", "max_sampling_time"}
     return set(signature.parameters)
-
-
-def _build_fallback_kwargs(supported_kwargs: set[str]) -> dict[str, object]:
-    """Build kwargs for retrying with direct/non-rejection sampling where possible."""
-    kwargs: dict[str, object] = {}
-    if "reject_outside_prior" in supported_kwargs:
-        kwargs["reject_outside_prior"] = False
-    # DirectPosterior in sbi supports sample_with='direct' for direct draws.
-    if "sample_with" in supported_kwargs:
-        kwargs["sample_with"] = "direct"
-    return kwargs
 
 
 def _validate_posterior_samples(samples: torch.Tensor, x_index: int) -> torch.Tensor:

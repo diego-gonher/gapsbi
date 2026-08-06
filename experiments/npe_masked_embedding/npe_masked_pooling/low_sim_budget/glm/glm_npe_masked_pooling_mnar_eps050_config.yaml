@@ -27,5 +27,5 @@ evaluation:
   num_alpha_grid: 101
 
 sampling:
-  reject_outside_prior: false
+  reject_outside_prior: true
   max_sampling_time: 30.0

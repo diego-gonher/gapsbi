@@ -115,7 +115,7 @@ def config_for(*, problem: str, budget: str, mechanism: str, eps: str) -> dict:
             "num_alpha_grid": 101,
         },
         "sampling": {
-            "reject_outside_prior": False,
+            "reject_outside_prior": True,
             "max_sampling_time": 30.0,
         },
     }

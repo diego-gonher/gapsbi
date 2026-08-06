@@ -37,7 +37,7 @@ class _FallbackPosterior:
     def sample(self, shape, x, show_progress_bars=False, **kwargs):  # noqa: ANN001, ANN202
         del show_progress_bars
         self.calls.append(kwargs)
-        if kwargs.get("reject_outside_prior", False):
+        if kwargs.get("reject_outside_prior") is True:
             raise RuntimeError("max_sampling_time exceeded")
         num = int(shape[0])
         return x.repeat(num, 1)
@@ -101,7 +101,7 @@ def test_sample_posteriors_once_uses_rejection_sampling_by_default() -> None:
     assert posterior.calls[0]["max_sampling_time"] == 30.0
 
 
-def test_sample_posteriors_once_runtime_error_uses_fallback() -> None:
+def test_sample_posteriors_once_runtime_error_fills_nans() -> None:
     posterior = _FallbackPosterior()
     x_eval = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
 
@@ -116,6 +116,7 @@ def test_sample_posteriors_once_runtime_error_uses_fallback() -> None:
     )
 
     assert samples.shape == (1, 2, 2)
+    assert torch.isnan(samples).all()
     assert failures == 1
     assert fallbacks == 1
     assert fallback_used is True
@@ -189,10 +190,10 @@ def test_sample_posteriors_once_records_assertion_failures() -> None:
     assert fallback_used
 
 
-def test_sample_posteriors_once_falls_back_on_nonfinite_samples() -> None:
+def test_sample_posteriors_once_records_nonfinite_samples() -> None:
     from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 
-    class NonfiniteThenFinitePosterior:
+    class NonfinitePosterior:
         def __init__(self) -> None:
             self.num_calls = 0
 
@@ -200,22 +201,19 @@ def test_sample_posteriors_once_falls_back_on_nonfinite_samples() -> None:
             del show_progress_bars, kwargs
             self.num_calls += 1
             num = int(shape[0])
-            if self.num_calls == 1:
-                return torch.full((num, x.shape[-1]), float("inf"))
-            return torch.zeros(num, x.shape[-1])
+            return torch.full((num, x.shape[-1]), float("inf"))
 
     x_eval = torch.zeros(1, 3)
     samples, failures, fallbacks, fallback_used = sample_posteriors_once(
-        posterior=NonfiniteThenFinitePosterior(),
+        posterior=NonfinitePosterior(),
         x_eval=x_eval,
         num_posterior_samples=4,
         seed=123,
-        fallback_to_direct=True,
         return_num_sampling_failures=True,
     )
 
     assert samples.shape == (1, 4, 3)
-    assert torch.isfinite(samples).all()
+    assert torch.isnan(samples).all()
     assert failures == 1
     assert fallbacks == 1
     assert fallback_used

@@ -186,7 +186,6 @@ def main() -> None:
     max_sampling_time = sampling_cfg.get("max_sampling_time", 30.0)
     if max_sampling_time is not None:
         max_sampling_time = float(max_sampling_time)
-    fallback_to_direct = bool(sampling_cfg.get("fallback_to_direct", False))
 
     embedding_type = str(embedding_cfg_raw.get("type", "masked_attention")).lower()
     method_name = f"npe_{embedding_type}"
@@ -370,7 +369,6 @@ def main() -> None:
             seed=seed + 10_000,
             reject_outside_prior=reject_outside_prior,
             max_sampling_time=max_sampling_time,
-            fallback_to_direct=fallback_to_direct,
             return_num_sampling_failures=True,
         )
         sampling_end = time.perf_counter()
@@ -508,7 +506,6 @@ def main() -> None:
             "augmentation": "concat_x_zero_imputed_mask_with_embedding_net",
             "reject_outside_prior": bool(reject_outside_prior),
             "max_sampling_time": max_sampling_time,
-            "fallback_to_direct": bool(fallback_to_direct),
             "num_sampling_failures": int(num_sampling_failures),
             "num_sampling_fallbacks": int(num_sampling_fallbacks),
             "fallback_sampling_used": bool(fallback_sampling_used),

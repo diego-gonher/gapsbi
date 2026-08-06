@@ -25,7 +25,7 @@ evaluation:
   num_posterior_samples: 1000
   num_alpha_grid: 101
 sampling:
-  reject_outside_prior: false
+  reject_outside_prior: true
   max_sampling_time: 30.0
 max_train_samples: 900
 max_val_samples: 100
