@@ -23,9 +23,9 @@ def sample_posteriors_once(
     num_sampling_failures = 0
     num_sampling_fallbacks = 0
 
-    sampling_kwargs: dict[str, object] = {}
-    if reject_outside_prior:
-        sampling_kwargs["reject_outside_prior"] = reject_outside_prior
+    sampling_kwargs: dict[str, object] = {
+        "reject_outside_prior": bool(reject_outside_prior),
+    }
     if max_sampling_time is not None:
         sampling_kwargs["max_sampling_time"] = float(max_sampling_time)
 

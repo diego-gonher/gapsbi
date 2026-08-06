@@ -86,6 +86,20 @@ def test_sample_posteriors_once_passes_optional_sampling_kwargs() -> None:
     assert posterior.calls[0]["max_sampling_time"] == 30.0
 
 
+def test_sample_posteriors_once_disables_rejection_sampling_by_default() -> None:
+    posterior = _KwargPosterior()
+    x_eval = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+
+    sample_posteriors_once(
+        posterior=posterior,
+        x_eval=x_eval,
+        num_posterior_samples=3,
+        seed=123,
+    )
+
+    assert posterior.calls[0]["reject_outside_prior"] is False
+
+
 def test_sample_posteriors_once_runtime_error_uses_fallback() -> None:
     posterior = _FallbackPosterior()
     x_eval = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
