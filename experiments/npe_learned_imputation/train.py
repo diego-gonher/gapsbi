@@ -157,10 +157,11 @@ def main() -> None:
     eval_cfg = config["evaluation"]
     imputer_cfg = config["imputer"]
     sampling_cfg = config.get("sampling", {})
-    reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", False))
-    max_sampling_time = sampling_cfg.get("max_sampling_time", None)
+    reject_outside_prior = bool(sampling_cfg.get("reject_outside_prior", True))
+    max_sampling_time = sampling_cfg.get("max_sampling_time", 30.0)
     if max_sampling_time is not None:
         max_sampling_time = float(max_sampling_time)
+    fallback_to_direct = bool(sampling_cfg.get("fallback_to_direct", False))
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -286,6 +287,7 @@ def main() -> None:
                 seed=seed + 10_000,
                 reject_outside_prior=reject_outside_prior,
                 max_sampling_time=max_sampling_time,
+                fallback_to_direct=fallback_to_direct,
                 return_num_sampling_failures=True,
             )
             sampling_end = time.perf_counter()
@@ -404,6 +406,7 @@ def main() -> None:
                 "total_runtime_sec": float(total_runtime_sec),
                 "reject_outside_prior": bool(reject_outside_prior),
                 "max_sampling_time": max_sampling_time,
+                "fallback_to_direct": bool(fallback_to_direct),
                 "num_sampling_failures": int(num_sampling_failures),
                 "num_sampling_fallbacks": int(num_sampling_fallbacks),
                 "fallback_sampling_used": bool(fallback_sampling_used),
