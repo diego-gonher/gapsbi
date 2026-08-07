@@ -52,8 +52,7 @@ Implemented methods:
 - Mean-imputation NPE
 - Learned-constant imputation NPE
 - Zero-imputation + mask augmentation NPE
-- Masked-pooling embedding NPE
-- Masked-attention embedding NPE
+- Mask-aware transformer embedding NPE with learned attention pooling
 - Learned-imputation NPE
 - Probabilistic learned-imputation NPE
 
@@ -97,8 +96,7 @@ Methods:
 - Zero-imputation NPE
 - Mean-imputation NPE
 - Zero-imputation + mask augmentation NPE
-- Masked-pooling embedding NPE
-- Masked-attention embedding NPE
+- Mask-aware transformer embedding NPE with learned attention pooling
 - Learned-imputation NPE
 - Probabilistic learned-imputation NPE
 
@@ -680,30 +678,34 @@ bash experiments/npe_mask_augmentation/npe_mask_augmentation_run_queue_low_sim_b
 These configs also evaluate the ten fixed reference observations after applying
 deterministic experiment-matched masks and concatenating `[zero_imputed_x, mask]`.
 
-### Masked Embedding NPE
+### Masked Transformer Embedding NPE
 
-Uses the same zero-imputed scaled observation and binary mask condition as mask augmentation, but passes `[x_zero_imputed_scaled, mask]` through a small mask-aware embedding network before NSF-NPE. The pooling variant tokenizes each feature, adds learned feature embeddings, uses masked mean pooling over observed tokens, and appends a compact mask summary. The attention variant adds one shallow self-attention layer with missing entries excluded as attention keys/values, while still preserving the mask pattern through the mask-summary path.
+Uses the same zero-imputed scaled observation and binary mask condition as mask augmentation, but passes `[x_zero_imputed_scaled, mask]` through a shallow mask-aware transformer embedding network before NSF-NPE. The encoder tokenizes each feature, adds learned feature embeddings, excludes missing entries as attention keys/values, and uses learned attention pooling over the observed tokens.
 
 The default configs intentionally keep the encoders small:
 
 ```text
 token_dim = 32
 context_dim = 64
-mask_summary_dim = 16
-masked_attention: num_layers = 1, num_heads = 2
+num_layers = 1
+num_heads = 2
+ff_multiplier = 2
 ```
 
 ```bash
-PYTHONPATH=src python experiments/npe_masked_embedding/train.py \
-  --config experiments/npe_masked_embedding/npe_masked_pooling/full_sim_budget/oup/oup_npe_masked_pooling_mcar_eps025_config.yaml
+PYTHONPATH=src python experiments/npe_masked_transformer_embedding/train.py \
+  --config experiments/npe_masked_transformer_embedding/low_sim_budget/oup/oup_npe_masked_transformer_embedding_mcar_eps025_config.yaml
 ```
+
+Budget queues:
 
 ```bash
-PYTHONPATH=src python experiments/npe_masked_embedding/train.py \
-  --config experiments/npe_masked_embedding/npe_masked_attention/full_sim_budget/oup/oup_npe_masked_attention_mcar_eps025_config.yaml
+bash experiments/npe_masked_transformer_embedding/npe_masked_transformer_embedding_run_queue_high_sim_budget.sh
+bash experiments/npe_masked_transformer_embedding/npe_masked_transformer_embedding_run_queue_mid_sim_budget.sh
+bash experiments/npe_masked_transformer_embedding/npe_masked_transformer_embedding_run_queue_low_sim_budget.sh
 ```
 
-Full-budget masked embedding outputs are written directly under `outputs/npe_masked_pooling/` and `outputs/npe_masked_attention/`. Low simulation-budget configs are under `experiments/npe_masked_embedding/{npe_masked_pooling,npe_masked_attention}/low_sim_budget/` and write under `outputs_low_sim_budget/npe_masked_pooling/` and `outputs_low_sim_budget/npe_masked_attention/`.
+Outputs are written under `outputs_{low,mid,high}_sim_budget/npe_masked_transformer_embedding/`.
 
 ### Learned-imputation NPE
 
@@ -909,7 +911,7 @@ experiments/
   npe_full_data/                 # Full-data NPE baseline
   npe_imputation/                # Zero/mean imputation baselines
   npe_mask_augmentation/         # Zero-imputation + mask baseline
-  npe_masked_embedding/          # Masked pooling/attention embedding NPE baselines
+  npe_masked_transformer_embedding/ # Mask-aware transformer embedding NPE baseline
   npe_learned_imputation/        # Learned-imputation baseline
   npe_probabilistic_learned_imputation/ # Probabilistic learned-imputation NPE
 outputs_high_sim_budget/         # High simulation-budget outputs
