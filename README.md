@@ -29,13 +29,16 @@ The package requires Python `>=3.11`. Core dependencies include `numpy`, `h5py`,
 
 ## Current Benchmark Status
 
-Implemented benchmark tasks:
+Implemented benchmark problems:
 
 - OUP
 - GLM
 - GLU
 - Lotka-Volterra
-- Ricker (legacy/implemented, not part of the current main four-problem benchmark)
+
+Implemented problems, but not yet part of the benchmark:
+
+- Ricker 
 - Spatial SIR
 - Hodgkin-Huxley
 
@@ -45,16 +48,19 @@ Implemented missingness mechanisms:
 - MAR: coordinate/time-dependent masking
 - MNAR: self-censoring value-dependent masking
 
-Implemented methods:
+Implemented benchmark methods:
 
 - Full-data NPE
 - Zero-imputation NPE
-- Mean-imputation NPE
 - Learned-constant imputation NPE
 - Zero-imputation + mask augmentation NPE
-- Mask-aware transformer embedding NPE with learned attention pooling
-- Learned-imputation NPE
+- Mask-aware transformer embedding with learned attention pooling NPE 
 - Probabilistic learned-imputation NPE
+
+Implemented legacy/appendix methods, not part of the main benchmark:
+
+- Mean-imputation NPE
+- Deterministic learned-imputation NPE
 
 Implemented evaluation and analysis:
 
@@ -67,9 +73,9 @@ Implemented evaluation and analysis:
 - Per-observation posterior fidelity metrics
 - Dataset characterization diagnostics
 
-## Benchmark V1
+## Benchmark
 
-Benchmark V1 is the main missing-data SBI comparison suite.
+The benchmark encompasses the main missing-data SBI comparison suite.
 
 Problems:
 
@@ -94,14 +100,13 @@ Methods:
 
 - Full-data NPE
 - Zero-imputation NPE
-- Mean-imputation NPE
+- Learned-constant imputation NPE
 - Zero-imputation + mask augmentation NPE
-- Mask-aware transformer embedding NPE with learned attention pooling
-- Learned-imputation NPE
+- Mask-aware transformer embedding with learned attention pooling NPE 
 - Probabilistic learned-imputation NPE
 
 The current experiment plan uses five fixed training seeds and three nested
-simulation-budget regimes over the same canonical HDF5 datasets:
+simulation-budget variations over the same canonical HDF5 datasets:
 
 - `high_sim_budget`: 90k train / 10k validation / 1k test.
 - `mid_sim_budget`: 9k train / 1k validation / full 1k test, using train/validation subsets.
@@ -177,62 +182,6 @@ with lognormal observation noise and a 1D packed observation vector.
 - observation model:
   - deterministic LV trajectory from initial state `[30, 1]`
   - lognormal observation noise with scale `0.1`
-
-### Ricker
-
-`RickerSimulator` implements a RISE-style stochastic Ricker population model. It
-remains implemented for legacy experiments but is not part of the current main
-four-problem benchmark.
-
-- `name`: `"ricker"`
-- `theta = [log_r, phi]`
-- `theta_dim = 2`
-- default `x_shape = (100,)`
-- prior:
-  - `log_r ~ Uniform(2, 8)`
-  - `phi ~ Uniform(0, 20)`
-
-### Spatial SIR
-
-`SpatialSIRSimulator` implements a lightweight NumPy/SciPy spatial SIR lattice benchmark with one final snapshot observation.
-
-- `name`: `"spatial_sir"`
-- `theta = [beta, gamma]`
-- `theta_dim = 2`
-- default `lattice_shape = (16, 16)`
-- default `measurement_time = 0.25`
-- default `original_x_shape = (3, 16, 16)`
-- default `x_shape = (768,)`
-- prior:
-  - `beta ~ Uniform(0, 1)`
-  - `gamma ~ Uniform(0, 1)`
-- observation:
-  - one final susceptible/infected/recovered snapshot at `measurement_time`
-  - channels are flattened for the HDF5 contract
-  - it is not a full time series
-
-For the default `16x16` lattice, `measurement_time=0.25` provides richer active infection structure than later times, which often let epidemics die out on the small grid.
-
-### Hodgkin-Huxley
-
-`HodgkinHuxleySimulator` implements a NumPy port of the Hodgkin-Huxley reference simulator with explicit RNG noise and downsampled raw voltage traces.
-
-- `name`: `"hodgkin_huxley"`
-- `theta = [g_Na, g_K]`
-- `theta_dim = 2`
-- prior:
-  - `g_Na ~ Uniform(0.5, 80.0)`
-  - `g_K ~ Uniform(1e-4, 15.0)`
-- default raw simulation:
-  - `duration = 120.0` ms
-  - `dt = 0.01` ms
-  - `t_on = 10.0` ms
-  - `curr_level = 5e-4`
-  - `downsample = 20`
-- default `x_shape` is approximately `(601,)`
-- output is a downsampled raw voltage trace in `float32`
-
-Raw mode is the default because missingness over time is meaningful for voltage traces. Summary mode is not implemented.
 
 ## Missingness
 
@@ -318,7 +267,7 @@ Other constants:
   - MAR: `lv_time_mar`, `mar-mode=increasing`
   - MNAR: `lv_log_total_mnar`
 
-Generate benchmark V1 canonical datasets with:
+Generate the exact benchmark canonical datasets with:
 
 ```bash
 bash scripts/generate_benchmark_v1_datasets.sh
@@ -678,6 +627,23 @@ bash experiments/npe_mask_augmentation/npe_mask_augmentation_run_queue_low_sim_b
 These configs also evaluate the ten fixed reference observations after applying
 deterministic experiment-matched masks and concatenating `[zero_imputed_x, mask]`.
 
+### Probabilistic Learned-imputation NPE
+
+Trains a RISE-inspired latent MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, samples a latent `z`, predicts a Gaussian completion distribution for `x`, and optimizes the NPE loss on mean-completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
+
+```bash
+PYTHONPATH=src python experiments/npe_probabilistic_learned_imputation/train.py \
+  --config experiments/npe_probabilistic_learned_imputation/high_sim_budget/oup/oup_npe_probabilistic_learned_imputation_mcar_eps025_config.yaml
+```
+
+Budget queues:
+
+```bash
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_high_sim_budget.sh
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_mid_sim_budget.sh
+bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_low_sim_budget.sh
+```
+
 ### Masked Transformer Embedding NPE
 
 Uses the same zero-imputed scaled observation and binary mask condition as mask augmentation, but passes `[x_zero_imputed_scaled, mask]` through a shallow mask-aware transformer embedding network before NSF-NPE. The encoder tokenizes each feature, adds learned feature embeddings, excludes missing entries as attention keys/values, and uses learned attention pooling over the observed tokens.
@@ -707,9 +673,10 @@ bash experiments/npe_masked_transformer_embedding/npe_masked_transformer_embeddi
 
 Outputs are written under `outputs_{low,mid,high}_sim_budget/npe_masked_transformer_embedding/`.
 
-### Learned-imputation NPE
+### Legacy learned-imputation NPE
 
-Trains an imputer network jointly with NPE. The imputer predicts missing x entries from `[x_obs_zero_imputed_scaled, mask]`, and the NPE model trains on completed inputs.
+This deterministic input-dependent imputation baseline is retained for reference
+but is not part of the main benchmark experiments.
 
 ```bash
 PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
@@ -723,29 +690,12 @@ PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
   --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps025_config.yaml
 ```
 
-### Probabilistic Learned-imputation NPE
-
-Trains a RISE-inspired latent MLP imputer jointly with an NPE density estimator. The imputer consumes `[x_obs_scaled, mask]`, samples a latent `z`, predicts a Gaussian completion distribution for `x`, and optimizes the NPE loss on mean-completed inputs. An optional mask-prediction head adds a mask loss; `use_mask_head: auto` enables it for MNAR datasets and disables it for MCAR/MAR by default.
-
-```bash
-PYTHONPATH=src python experiments/npe_probabilistic_learned_imputation/train.py \
-  --config experiments/npe_probabilistic_learned_imputation/high_sim_budget/oup/oup_npe_probabilistic_learned_imputation_mcar_eps025_config.yaml
-```
-
-Budget queues:
-
-```bash
-bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_high_sim_budget.sh
-bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_mid_sim_budget.sh
-bash experiments/npe_probabilistic_learned_imputation/npe_probabilistic_learned_imputation_run_queue_low_sim_budget.sh
-```
-
 ## Evaluation Metrics
 
 ### Calibration
 
-- **SBC**: simulation-based calibration ranks. Well-calibrated posteriors should produce approximately uniform rank histograms across posterior samples.
 - **TARP**: tests posterior calibration through expected coverage probability curves. The repository stores TARP plots, TARP arrays, and aggregate errors such as MAE/IAE from the identity line.
+- **SBC**: simulation-based calibration ranks. Well-calibrated posteriors should produce approximately uniform rank histograms across posterior samples.
 
 ### Posterior Shift
 
@@ -941,13 +891,3 @@ src/gapsbi/
   utils/                         # Seeding utilities
 tests/                           # Unit and integration tests
 ```
-
-## Future Work
-
-Planned or external extensions include:
-
-- Simformer-style methods
-- paper-complete or external RISE variants beyond the current GAPSBI-native baseline
-- additional learned representation methods
-- broader campaign coverage for Spatial SIR and Hodgkin-Huxley
-- larger benchmark suites and collaborator-scale runs

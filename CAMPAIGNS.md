@@ -26,13 +26,12 @@ Five Training Seeds:
 * 404
 * 505
 
-1. Full-data NPE (baseline; DONE)
-2. Zero Imputation NPE (Wang et al. 2024)
-2. Per-Feature Mean Imputation NPE (left to appendix; DONE)
-3. Zero-imputation + mask augmentation NPE (Wang et al. 2024)
-4. Per-Feautre Learned Imputation with NPE (Lueckman et al. 2017)
-5. Probabilistic Learned Imputation NPE (RISE-inspired)
-6. Transfomer Embeddings with NPE
+1. `npe_full_data`: Full-data NPE (baseline; DONE)
+2. `npe_zero_imputation`: Zero Imputation NPE (Wang et al. 2024; DONE)
+3. `npe_learned_constant_imputation`: Per-Feautre Learned Imputation with NPE (Lueckman et al. 2017; low and mid budgets done)
+4. `npe_mask_augmentation`: Zero-imputation + mask augmentation NPE (Wang et al. 2024)
+5. `npe_probabilistic_learned_imputation`: Probabilistic Learned Imputation NPE (RISE-inspired)
+6. `npe_masked_transformer_embedding`: Transfomer Embeddings with NPE
 
 Here is another way of conceptualizing these methods:
 

@@ -2,6 +2,9 @@
 
 Deterministic input-dependent learned imputation + NPE baseline.
 
+This is a legacy/appendix experiment and is not part of the main benchmark
+experiments.
+
 This is not the Lueckmann-style learned constant baseline. For that method, use
 `experiments/npe_learned_constant_imputation/`.
 
@@ -36,7 +39,7 @@ Where `recon_loss` is MSE restricted to missing entries only.
 
 ```bash
 PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
-  --config experiments/npe_learned_imputation/oup/oup_npe_learned_imputation_mcar_eps010_config.yaml
+  --config experiments/npe_learned_imputation/low_sim_budget/oup/oup_npe_learned_imputation_mcar_eps010_config.yaml
 ```
 
 ## Outputs

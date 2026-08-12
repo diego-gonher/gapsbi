@@ -11,11 +11,18 @@ dependencies = [
     "h5py",
     "matplotlib",
     "numpy",
+    "pandas",
+    "pyyaml",
     "scikit-learn",
     "scipy",
     "sbi",
     "torch",
     "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]
