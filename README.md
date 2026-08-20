@@ -703,98 +703,59 @@ PYTHONPATH=src python experiments/npe_learned_imputation/train.py \
 - **Euclidean posterior mean shift**: Euclidean distance between posterior means. This is a simple location-shift diagnostic.
 - **Covariance trace ratio**: ratio of estimator posterior covariance trace to reference posterior covariance trace. Values above `1` indicate larger marginal posterior variance on average; values below `1` indicate contraction.
 
-Reference posterior metrics are saved by the current full-data and naive
-imputation training scripts. They can also be recomputed from saved posterior
+Reference posterior metrics are saved by the current full-data and benchmark
+missing-data training scripts. They can also be recomputed from saved posterior
 sample files without retraining.
 
 ## Benchmark Analysis Scripts
 
-Some analysis scripts still use legacy `campaign1` filenames. They are retained
-for compatibility with existing experiment outputs.
+The current results workflow is organized as three seed-level CSV steps.
 
-Aggregate seed-level experiment outputs:
-
-```bash
-PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
-  --outputs-dir outputs \
-  --out outputs/campaign1_master_results.csv
-```
-
-Aggregate low simulation budget outputs:
+Compile all seed-level `summary.json` files from the budgeted output roots:
 
 ```bash
-PYTHONPATH=src python scripts/aggregate_campaign1_results.py \
-  --outputs-dir outputs_low_sim_budget \
-  --out outputs_low_sim_budget/campaign1_master_results.csv
+PYTHONPATH=src python scripts/compile_experiment_results.py
 ```
 
-Launch budget-specific queues, for example:
+This writes `outputs/analysis/full_experiment_results.csv`. Each row is one
+trained seed/run and includes identifiers such as `budget`, `method`, `problem`,
+`missingness`, `epsilon`, `seed`, `run_dir`, and `summary_path`, plus scalar
+fields from the JSON summary. Numeric list metrics, such as the ten fixed
+reference-posterior metrics, are retained as JSON strings and summarized with
+mean, standard deviation, median, min, max, and count columns.
+
+Add diagnostics derived from each run's `diagnostics_arrays.npz`:
 
 ```bash
-bash experiments/npe_full_data/npe_full_data_run_queue_low_sim_budget.sh
-bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
+PYTHONPATH=src python scripts/add_diagnostic_metrics.py
 ```
 
-Analyze stability and runtime across seeds/configurations:
+This writes `outputs/analysis/full_experiment_results_with_diagnostics.csv` and
+adds:
+
+- `tarp_mae`
+- `tarp_iae`
+- `sbc_ks_pval_min`
+- `sbc_ks_pval_mean`
+
+Aggregate seed-level results:
 
 ```bash
-PYTHONPATH=src python scripts/analyze_campaign1_stability.py \
-  --input outputs/campaign1_master_results.csv \
-  --outdir outputs/analysis
+PYTHONPATH=src python scripts/aggregate_experiment_results.py
 ```
 
-Report full-data baseline diagnostics:
+This writes grouped summaries under `outputs/analysis/aggregates/`:
 
-```bash
-PYTHONPATH=src python scripts/report_full_data_diagnostics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/full_data_diagnostics_report.txt
-```
+- `aggregate_by_config.csv`: `budget`, `method`, `problem`, `missingness`, `epsilon`
+- `aggregate_by_method.csv`: `budget`, `method`
+- `aggregate_by_method_problem.csv`: `budget`, `method`, `problem`
+- `aggregate_by_method_missingness.csv`: `budget`, `method`, `missingness`
+- `aggregate_by_method_epsilon.csv`: `budget`, `method`, `epsilon`
+- `aggregate_by_budget.csv`: `budget`
 
-Compute aggregate posterior shift between each missing-data run and the matched full-data run:
-
-```bash
-PYTHONPATH=src python scripts/compute_campaign1_shift_metrics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/campaign1_shift_metrics.csv \
-  --summary-out outputs/analysis/campaign1_shift_metrics_summary.csv
-```
-
-Compute full-data seed-to-seed posterior variability:
-
-```bash
-PYTHONPATH=src python scripts/compute_full_data_seed_shift_metrics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/full_data_seed_shift_metrics.csv \
-  --summary-out outputs/analysis/full_data_seed_shift_metrics_summary.csv
-```
-
-Compute per-observation posterior shift, comparing each test observation's missing-data posterior to the matched full-data posterior:
-
-```bash
-PYTHONPATH=src python scripts/compute_campaign1_per_observation_shift_metrics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/campaign1_per_observation_shift_metrics.csv \
-  --summary-out outputs/analysis/campaign1_per_observation_shift_metrics_summary.csv
-```
-
-Compute per-observation posterior moment shifts to separate posterior location changes from uncertainty-volume changes:
-
-```bash
-PYTHONPATH=src python scripts/compute_campaign1_per_observation_moment_shift_metrics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/campaign1_per_observation_moment_shift_metrics.csv \
-  --summary-out outputs/analysis/campaign1_per_observation_moment_shift_metrics_summary.csv
-```
-
-Compute the corresponding full-data per-observation seed variability baseline for posterior moment shifts:
-
-```bash
-PYTHONPATH=src python scripts/compute_full_data_per_observation_seed_moment_shift_metrics.py \
-  --input outputs/campaign1_master_results.csv \
-  --out outputs/analysis/full_data_per_observation_seed_moment_shift_metrics.csv \
-  --summary-out outputs/analysis/full_data_per_observation_seed_moment_shift_metrics_summary.csv
-```
+Aggregates are computed across trained seeds. The ten reference observations are
+not treated as independent seeds; per-seed reference-list summaries from
+`compile_experiment_results.py` are aggregated across seeds.
 
 ## Python API Example
 
@@ -844,7 +805,7 @@ The test suite covers:
 - posterior sampling, SBC, and TARP helpers
 - NPE helper wiring without slow training
 - Benchmark aggregation and stability analysis
-- posterior shift and moment-shift metric helpers and analysis scripts
+- experiment result compilation and aggregate summary scripts
 
 Run tests with:
 
@@ -873,14 +834,9 @@ scripts/
   generate_benchmark_v1_datasets.sh
   plot_dataset_examples.py
   diagnose_dataset.py
-  aggregate_campaign1_results.py
-  analyze_campaign1_stability.py
-  report_full_data_diagnostics.py
-  compute_campaign1_shift_metrics.py
-  compute_full_data_seed_shift_metrics.py
-  compute_campaign1_per_observation_shift_metrics.py
-  compute_campaign1_per_observation_moment_shift_metrics.py
-  compute_full_data_per_observation_seed_moment_shift_metrics.py
+  compile_experiment_results.py
+  add_diagnostic_metrics.py
+  aggregate_experiment_results.py
 src/gapsbi/
   diagnostics/                   # Dataset plotting helpers
   evaluation/                    # Posterior sampling, SBC, TARP

@@ -56,3 +56,8 @@ Metrics to use:
 * Mean shift with the 10 reference posteriors. This is to measure any biases. 
 * Covariance trace ratio with the 10 reference posteriors. This is to measure posterior broadening.
 * TARP on a set of 1000 synthetic observations. This is to measure global posterior calibration.
+
+Results workflow:
+* Compile seed-level summaries with `scripts/compile_experiment_results.py`.
+* Add diagnostics-array metrics with `scripts/add_diagnostic_metrics.py`.
+* Aggregate seed-level results with `scripts/aggregate_experiment_results.py`.
