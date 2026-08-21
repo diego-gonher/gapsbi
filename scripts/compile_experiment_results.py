@@ -83,6 +83,21 @@ def parse_epsilon_from_text(text: str) -> float:
     return int(match.group(1)) / 100.0
 
 
+def normalize_epsilon_value(value: Any) -> float:
+    if value is None:
+        return _nan()
+    text = str(value).strip()
+    if not text:
+        return _nan()
+    try:
+        epsilon = float(text)
+    except (TypeError, ValueError):
+        return _nan()
+    if epsilon > 1.0:
+        epsilon = epsilon / 100.0
+    return epsilon
+
+
 def seed_from_path(summary_path: Path) -> int | str:
     seed_dir = summary_path.parent.name
     match = SEED_RE.match(seed_dir)
@@ -191,11 +206,9 @@ def normalized_identifier(
             return value
         return "none" if path_metadata["method"] == "npe_full_data" else path_metadata[key]
     if key == "epsilon":
-        try:
-            if value is not None:
-                return float(value)
-        except (TypeError, ValueError):
-            pass
+        epsilon = normalize_epsilon_value(value)
+        if math.isfinite(epsilon):
+            return epsilon
         return path_metadata[key]
     if key == "seed":
         try:
