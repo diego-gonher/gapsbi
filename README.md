@@ -68,6 +68,7 @@ Implemented evaluation and analysis:
 - TARP calibration diagnostics
 - SBC rank diagnostics
 - Benchmark result aggregation
+- Publication plotting for benchmark metrics, coverage curves, computational cost, and posterior examples
 - Full-data seed diagnostics
 - C2ST and posterior moment metrics against fixed reference posteriors
 - Per-observation posterior fidelity metrics
@@ -757,6 +758,58 @@ Aggregates are computed across trained seeds. The ten reference observations are
 not treated as independent seeds; per-seed reference-list summaries from
 `compile_experiment_results.py` are aggregated across seeds.
 
+### Benchmark Figures
+
+The publication plotting scripts read the compiled analysis CSVs and saved
+diagnostic/posterior-sample files. They do not retrain estimators or modify
+experiment outputs.
+
+Generate the SBIBM-style metric summary figures:
+
+```bash
+PYTHONPATH=src python scripts/plot_benchmark_summary.py --all
+```
+
+This writes PDF/PNG figures under `outputs/analysis/figures/benchmark/` for
+C2ST, TARP MAE, posterior mean shift, and covariance trace ratio, split by
+missingness mechanism. Points show mean +/- 1.96 SE across training seeds.
+
+Generate mean TARP empirical coverage curves:
+
+```bash
+PYTHONPATH=src python scripts/plot_coverage_curves.py --all
+```
+
+This writes `coverage_{low,mid,high}_{mcar,mar,mnar}.pdf/png` under
+`outputs/analysis/figures/coverage/`. Curves are the saved `ecp(alpha)` TARP
+coverage arrays averaged pointwise across seeds; shaded bands show mean +/- 1.96
+SE across seeds.
+
+Generate computational-cost figures:
+
+```bash
+PYTHONPATH=src python scripts/plot_computational_cost.py --all
+```
+
+This writes cost figures under `outputs/analysis/figures/computational_cost/`
+and `outputs/analysis/aggregates/aggregate_computational_cost.csv`. Training
+time is the recorded estimator training wall-clock time. Inference time is the
+recorded reference posterior sampling time normalized per reference observation.
+
+Generate qualitative posterior examples:
+
+```bash
+PYTHONPATH=src python scripts/plot_posterior_examples.py --problem oup
+PYTHONPATH=src python scripts/plot_posterior_examples.py --problem glm
+PYTHONPATH=src python scripts/plot_posterior_examples.py --problem glu
+PYTHONPATH=src python scripts/plot_posterior_examples.py --problem lv
+```
+
+These write figures under `outputs/analysis/figures/posterior_examples/`.
+Posterior examples use saved reference posterior samples only, concatenate up to
+1,000 posterior samples per seed across the five training seeds, and show one
+selected 2D marginal for each problem.
+
 ## Python API Example
 
 ```python
@@ -806,6 +859,7 @@ The test suite covers:
 - NPE helper wiring without slow training
 - Benchmark aggregation and stability analysis
 - experiment result compilation and aggregate summary scripts
+- publication plotting scripts for benchmark figures
 
 Run tests with:
 
@@ -837,6 +891,10 @@ scripts/
   compile_experiment_results.py
   add_diagnostic_metrics.py
   aggregate_experiment_results.py
+  plot_benchmark_summary.py
+  plot_coverage_curves.py
+  plot_computational_cost.py
+  plot_posterior_examples.py
 src/gapsbi/
   diagnostics/                   # Dataset plotting helpers
   evaluation/                    # Posterior sampling, SBC, TARP

@@ -61,3 +61,8 @@ Results workflow:
 * Compile seed-level summaries with `scripts/compile_experiment_results.py`.
 * Add diagnostics-array metrics with `scripts/add_diagnostic_metrics.py`.
 * Aggregate seed-level results with `scripts/aggregate_experiment_results.py`.
+* Generate publication figures with:
+  * `scripts/plot_benchmark_summary.py` for scalar benchmark metrics.
+  * `scripts/plot_coverage_curves.py` for mean TARP coverage curves.
+  * `scripts/plot_computational_cost.py` for training and inference cost.
+  * `scripts/plot_posterior_examples.py` for qualitative posterior examples.
