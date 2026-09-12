@@ -33,7 +33,7 @@ def resolve_plot_type(plot_type: str, metadata: dict) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot examples from a GAPSBI dataset.")
+    parser = argparse.ArgumentParser(description="Plot examples from a GapSBI dataset.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--split", choices=["train", "val", "test"], default="train")
     parser.add_argument("--num-examples", type=int, default=6)

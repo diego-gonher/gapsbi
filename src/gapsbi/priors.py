@@ -1,4 +1,4 @@
-"""Simple prior distributions for GAPSBI simulators."""
+"""Simple prior distributions for GapSBI simulators."""
 
 from __future__ import annotations
 

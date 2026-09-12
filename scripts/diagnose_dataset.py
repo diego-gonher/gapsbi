@@ -15,8 +15,8 @@ from gapsbi.io import ARRAYS, SPLITS
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run minimal diagnostics for one GAPSBI dataset split.")
-    parser.add_argument("--dataset-path", required=True, help="Path to a GAPSBI HDF5 dataset.")
+    parser = argparse.ArgumentParser(description="Run minimal diagnostics for one GapSBI dataset split.")
+    parser.add_argument("--dataset-path", required=True, help="Path to a GapSBI HDF5 dataset.")
     parser.add_argument("--output-dir", required=True, help="Directory where diagnostic outputs will be written.")
     parser.add_argument("--split", choices=SPLITS, default="train")
     args = parser.parse_args()
@@ -56,7 +56,7 @@ def main() -> None:
 
 
 def load_split(dataset_path: Path, split: str) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
-    """Load one split and available HDF5 attributes from a GAPSBI dataset."""
+    """Load one split and available HDF5 attributes from a GapSBI dataset."""
     with h5py.File(dataset_path, "r") as h5:
         if split not in h5:
             raise ValueError(f"Split {split!r} not found in {dataset_path}.")

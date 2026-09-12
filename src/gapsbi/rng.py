@@ -1,4 +1,4 @@
-"""Random-number utilities for GAPSBI.
+"""Random-number utilities for GapSBI.
 
 All randomness should use explicit numpy.random.Generator objects.
 Do not use global np.random state.

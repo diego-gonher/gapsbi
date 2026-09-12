@@ -16,7 +16,7 @@ from gapsbi.references import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Plot marginal diagnostics for GAPSBI reference posterior artifacts."
+        description="Plot marginal diagnostics for GapSBI reference posterior artifacts."
     )
     parser.add_argument("reference_path", type=Path)
     parser.add_argument("--output-dir", type=Path, default=None)

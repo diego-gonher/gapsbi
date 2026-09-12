@@ -33,7 +33,7 @@ def generate_split(
     progress: bool = False,
     desc: str = "Generating split",
 ) -> dict[str, np.ndarray]:
-    """Generate one GAPSBI dataset split."""
+    """Generate one GapSBI dataset split."""
     if n < 0:
         raise ValueError("n must be nonnegative.")
 

@@ -19,7 +19,7 @@ def save_gapsbi_hdf5(
     metadata: dict[str, Any] | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Save a GAPSBI dataset using the grouped HDF5 contract."""
+    """Save a GapSBI dataset using the grouped HDF5 contract."""
     validate_gapsbi_dataset(dataset)
 
     output_path = Path(path)
@@ -41,7 +41,7 @@ def save_gapsbi_hdf5(
 def load_gapsbi_hdf5(
     path: str | os.PathLike[str],
 ) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, Any]]:
-    """Load a GAPSBI HDF5 dataset and file-level metadata."""
+    """Load a GapSBI HDF5 dataset and file-level metadata."""
     dataset: dict[str, dict[str, np.ndarray]] = {}
     metadata: dict[str, Any] = {}
 
@@ -54,7 +54,7 @@ def load_gapsbi_hdf5(
 
 
 def validate_gapsbi_dataset(dataset: dict[str, dict[str, np.ndarray]]) -> None:
-    """Validate the GAPSBI in-memory dataset contract."""
+    """Validate the GapSBI in-memory dataset contract."""
     for split in SPLITS:
         if split not in dataset:
             raise ValueError(f"Missing required split: {split}.")

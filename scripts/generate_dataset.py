@@ -69,7 +69,7 @@ def validate_task_mask_compatibility(task: str, mask: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate a GAPSBI HDF5 dataset.")
+    parser = argparse.ArgumentParser(description="Generate a GapSBI HDF5 dataset.")
     parser.add_argument(
         "--task",
         choices=[

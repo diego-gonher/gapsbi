@@ -227,7 +227,7 @@ def _validate_rise_config(rise_cfg: dict[str, Any]) -> None:
     imputer_type = str(rise_cfg.get("imputer_type", "mlp")).lower()
     if imputer_type != "mlp":
         raise ValueError(
-            "GAPSBI-native RISE currently supports only rise.imputer_type='mlp', "
+            "GapSBI-native RISE currently supports only rise.imputer_type='mlp', "
             f"got {imputer_type!r}."
         )
 

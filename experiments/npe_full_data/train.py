@@ -40,7 +40,7 @@ matplotlib.use("Agg")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train NPE on full-data GAPSBI splits.")
+    parser = argparse.ArgumentParser(description="Train NPE on full-data GapSBI splits.")
     parser.add_argument(
         "--config",
         type=Path,

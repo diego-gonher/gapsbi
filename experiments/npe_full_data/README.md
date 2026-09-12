@@ -5,7 +5,7 @@ using reusable package utilities under `src/gapsbi`.
 
 ## What it does
 
-- Loads a GAPSBI HDF5 dataset from `dataset_path`.
+- Loads a GapSBI HDF5 dataset from `dataset_path`.
 - Uses `x_full` only (not `x_obs` or `mask`).
 - Uses predefined train/val/test splits from the dataset.
 - Scales:

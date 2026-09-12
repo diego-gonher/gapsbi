@@ -15,7 +15,7 @@ from gapsbi.references import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate GAPSBI reference posterior HDF5 artifacts."
+        description="Generate GapSBI reference posterior HDF5 artifacts."
     )
     parser.add_argument("--problem", choices=["glu", "oup", "glm", "lotka_volterra"], default="glu")
     parser.add_argument("--num-observations", type=int, default=10)

@@ -1,6 +1,6 @@
-# GAPSBI: Gaps in Data for Simulation-Based Inference
+# GapSBI: Gaps in Data for Simulation-Based Inference
 
-GAPSBI is a benchmark and experimentation framework for simulation-based inference under missing data. It provides synthetic benchmark problems, MCAR/MAR/MNAR missingness mechanisms, reproducible HDF5 datasets, baseline NPE methods, calibration diagnostics, experiment aggregation, and posterior shift diagnostics.
+GapSBI is a benchmark and experimentation framework for simulation-based inference under missing data. It provides synthetic benchmark problems, MCAR/MAR/MNAR missingness mechanisms, reproducible HDF5 datasets, baseline NPE methods, calibration diagnostics, experiment aggregation, and posterior shift diagnostics.
 
 The core dataset contract is simple:
 

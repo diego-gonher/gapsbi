@@ -67,7 +67,7 @@ P_VALUE_STATS = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Aggregate enriched GAPSBI experiment results across seeds.",
+        description="Aggregate enriched GapSBI experiment results across seeds.",
     )
     parser.add_argument(
         "--input",

@@ -140,14 +140,27 @@ class FigureReport:
     inference_scale: AxisScale
 
 
+@dataclass(frozen=True)
+class TrainingOnlyReport:
+    stem: str
+    budget: str
+    missingness: str
+    training_scale: AxisScale
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot GAPSBI computational cost figures.")
+    parser = argparse.ArgumentParser(description="Plot GapSBI computational cost figures.")
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--outdir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--aggregate-out", type=Path, default=DEFAULT_AGGREGATE_PATH)
     parser.add_argument("--budget", choices=sorted(BUDGET_CLI), help="Budget to plot.")
     parser.add_argument("--missingness", choices=MISSINGNESS_ORDER, help="Missingness to plot.")
     parser.add_argument("--all", action="store_true", help="Generate all budget/missingness figures.")
+    parser.add_argument(
+        "--training-only",
+        action="store_true",
+        help="Generate single-column training-cost figures only.",
+    )
     parser.add_argument(
         "--format",
         choices=("pdf", "png"),
@@ -371,6 +384,24 @@ def scales_for_figure(rows: pd.DataFrame) -> dict[str, AxisScale]:
     }
 
 
+def cost_legend_handles() -> list[Line2D]:
+    return [
+        Line2D([0], [0], color=FULL_DATA_COLOR, marker="s", linewidth=0, markersize=7, label="Full-data NPE"),
+        *[
+            Line2D(
+                [0],
+                [0],
+                color=FRACTION_COLORS[epsilon],
+                marker="s",
+                linewidth=0,
+                markersize=7,
+                label=FRACTION_LABELS[epsilon],
+            )
+            for epsilon in FRACTION_ORDER
+        ],
+    ]
+
+
 def plot_cost_figure(agg: pd.DataFrame, *, budget: str, missingness: str) -> tuple[plt.Figure, FigureReport]:
     rows = rows_for_figure(agg, budget, missingness)
     scales = scales_for_figure(rows)
@@ -424,23 +455,8 @@ def plot_cost_figure(agg: pd.DataFrame, *, budget: str, missingness: str) -> tup
         va="center",
     )
 
-    handles = [
-        Line2D([0], [0], color=FULL_DATA_COLOR, marker="s", linewidth=0, markersize=7, label="Full-data NPE"),
-        *[
-            Line2D(
-                [0],
-                [0],
-                color=FRACTION_COLORS[epsilon],
-                marker="s",
-                linewidth=0,
-                markersize=7,
-                label=FRACTION_LABELS[epsilon],
-            )
-            for epsilon in FRACTION_ORDER
-        ],
-    ]
     fig.legend(
-        handles=handles,
+        handles=cost_legend_handles(),
         loc="upper center",
         bbox_to_anchor=(0.5, 0.955),
         ncol=4,
@@ -456,6 +472,59 @@ def plot_cost_figure(agg: pd.DataFrame, *, budget: str, missingness: str) -> tup
         missingness=missingness,
         training_scale=scales["training"],
         inference_scale=scales["inference"],
+    )
+    return fig, report
+
+
+def plot_training_only_figure(
+    agg: pd.DataFrame,
+    *,
+    budget: str,
+    missingness: str,
+) -> tuple[plt.Figure, TrainingOnlyReport]:
+    rows = rows_for_figure(agg, budget, missingness)
+    spec = COST_SPECS["training"]
+    scale = choose_axis_scale(
+        pd.to_numeric(rows[spec.mean_column], errors="coerce").to_numpy(dtype=float)
+    )
+    fig, axes = plt.subplots(
+        nrows=len(PROBLEM_ORDER),
+        ncols=1,
+        figsize=(5.8, 8.2),
+        sharex=True,
+        constrained_layout=False,
+    )
+
+    for row_idx, problem in enumerate(PROBLEM_ORDER):
+        ax = axes[row_idx]
+        style_axis(ax, scale)
+        ax.set_ylabel(PROBLEM_LABELS[problem], fontsize=10.5, fontweight="bold")
+        plot_cost_bars(ax, rows, problem=problem, spec=spec, scale=scale)
+        if row_idx < len(PROBLEM_ORDER) - 1:
+            ax.tick_params(labelbottom=False)
+        else:
+            ax.set_xticks(np.arange(len(METHOD_ORDER)))
+            ax.set_xticklabels([METHOD_LABELS[m] for m in METHOD_ORDER], fontsize=8)
+
+    fig.suptitle("Training Cost", fontsize=13, fontweight="bold", y=0.988)
+    fig.supxlabel("Inference strategy", fontsize=11, y=0.040)
+    fig.supylabel(f"Wall-clock time [{scale.unit_label}]", fontsize=11, x=0.018)
+    fig.legend(
+        handles=cost_legend_handles(),
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.955),
+        ncol=4,
+        frameon=False,
+        fontsize=9,
+        columnspacing=1.15,
+        handletextpad=0.35,
+    )
+    fig.subplots_adjust(left=0.22, right=0.985, bottom=0.12, top=0.845, hspace=0.18)
+    report = TrainingOnlyReport(
+        stem=f"training_cost_{budget.split('_')[0]}_{missingness}",
+        budget=budget,
+        missingness=missingness,
+        training_scale=scale,
     )
     return fig, report
 
@@ -559,17 +628,53 @@ def caption_text(report: FigureReport) -> str:
     )
 
 
+def training_only_caption_text(report: TrainingOnlyReport) -> str:
+    return (
+        f"Training cost for {MISSINGNESS_LABELS[report.missingness]} missingness at the "
+        f"{BUDGET_LABELS[report.budget]}. Rows are benchmark problems and bars show "
+        "Full-Data NPE plus the five missing-data representation strategies. Missing-data "
+        "methods show 10%, 25%, and 50% missing fractions; Full-Data NPE is shown once "
+        "because missing fraction does not apply. Bars are means across five independent "
+        "training seeds; error bars show mean +/- 1.96 standard errors across seeds. "
+        "Training time is the wall-clock duration of inference.train(...) or the "
+        "corresponding joint estimator-training routine only; metric computation, "
+        "posterior sampling, diagnostics, plotting, saving, and total pipeline overhead "
+        "are excluded."
+    )
+
+
 def write_captions(captions: dict[str, str], outdir: Path) -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
     path = outdir / "captions.md"
+    merged = read_existing_captions(path)
+    merged.update(captions)
     lines = ["# Computational Cost Figure Captions", ""]
-    for stem, caption in sorted(captions.items()):
+    for stem, caption in sorted(merged.items()):
         lines.append(f"## `{stem}`")
         lines.append("")
         lines.append(textwrap.fill(caption, width=100))
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
+
+
+def read_existing_captions(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    captions: dict[str, str] = {}
+    current_stem: str | None = None
+    current_lines: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## `") and line.endswith("`"):
+            if current_stem is not None:
+                captions[current_stem] = " ".join(current_lines).strip()
+            current_stem = line.removeprefix("## `").removesuffix("`")
+            current_lines = []
+        elif current_stem is not None and line.strip():
+            current_lines.append(line.strip())
+    if current_stem is not None:
+        captions[current_stem] = " ".join(current_lines).strip()
+    return captions
 
 
 def print_report(report: FigureReport) -> None:
@@ -583,6 +688,15 @@ def print_report(report: FigureReport) -> None:
         "  inference range: "
         f"{report.inference_scale.raw_min:.4g} to {report.inference_scale.raw_max:.4g} s/obs; "
         f"unit={report.inference_scale.unit_label}; log={report.inference_scale.log}"
+    )
+
+
+def print_training_only_report(report: TrainingOnlyReport) -> None:
+    print(f"{report.stem}:")
+    print(
+        "  training range: "
+        f"{report.training_scale.raw_min:.4g} to {report.training_scale.raw_max:.4g} s; "
+        f"unit={report.training_scale.unit_label}; log={report.training_scale.log}"
     )
 
 
@@ -627,13 +741,17 @@ def main() -> None:
 
     written: list[Path] = []
     captions: dict[str, str] = {}
-    reports: list[FigureReport] = []
     for budget, missingness in selected_jobs(args):
-        fig, report = plot_cost_figure(agg, budget=budget, missingness=missingness)
-        reports.append(report)
-        print_report(report)
-        written.extend(save_figure(fig, outdir=args.outdir, stem=report.stem, formats=formats, dpi=args.dpi))
-        captions[report.stem] = caption_text(report)
+        if args.training_only:
+            fig, report = plot_training_only_figure(agg, budget=budget, missingness=missingness)
+            print_training_only_report(report)
+            written.extend(save_figure(fig, outdir=args.outdir, stem=report.stem, formats=formats, dpi=args.dpi))
+            captions[report.stem] = training_only_caption_text(report)
+        else:
+            fig, report = plot_cost_figure(agg, budget=budget, missingness=missingness)
+            print_report(report)
+            written.extend(save_figure(fig, outdir=args.outdir, stem=report.stem, formats=formats, dpi=args.dpi))
+            captions[report.stem] = caption_text(report)
 
     caption_path = write_captions(captions, args.outdir)
     print_budget_ranges(agg)

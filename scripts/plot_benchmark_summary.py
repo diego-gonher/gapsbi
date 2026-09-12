@@ -51,6 +51,15 @@ MISSINGNESS_LABELS = {
     "mar": "MAR",
     "mnar": "MNAR",
 }
+COMBINED_MISSINGNESS_ORDER = ["mcar", "mnar"]
+COMBINED_MISSINGNESS_LINESTYLES = {
+    "mcar": "-",
+    "mnar": (0, (4, 2.5)),
+}
+COMBINED_MISSINGNESS_OFFSCALE_OPEN = {
+    "mcar": False,
+    "mnar": True,
+}
 FRACTION_ORDER = [0.10, 0.25, 0.50]
 FRACTION_LABELS = {
     0.10: "10%",
@@ -63,6 +72,7 @@ FRACTION_COLORS = {
     0.50: "#FF0087",
 }
 FULL_DATA_COLOR = "#262626"
+FULL_DATA_MARKER = "*"
 OFFSCALE_X_DELTA = 0.055
 OFFSCALE_X_OFFSETS = {
     0.10: -OFFSCALE_X_DELTA,
@@ -71,6 +81,8 @@ OFFSCALE_X_OFFSETS = {
 }
 OFFSCALE_MARKER_SIZE = 24
 OFFSCALE_MARKER_ALPHA = 0.55
+BASE_MARKER_SIZE = 3.1
+COMBINED_MARKER_SIZE = 2.8
 
 
 @dataclass(frozen=True)
@@ -148,6 +160,14 @@ def parse_args() -> argparse.Namespace:
         "--all",
         action="store_true",
         help="Generate all metric/missingness combinations.",
+    )
+    parser.add_argument(
+        "--combined-mcar-mnar",
+        action="store_true",
+        help=(
+            "Generate combined MCAR/MNAR figures. MCAR uses solid lines; "
+            "MNAR uses dashed lines and open off-scale triangles."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -326,9 +346,9 @@ def plot_benchmark_grid(
             ax = axes[row_idx, col_idx]
             style_axis(ax, metric, y_limits)
             if row_idx == 0:
-                ax.set_title(METHOD_LABELS[method], fontsize=9.5, fontweight="bold", pad=8)
+                ax.set_title(METHOD_LABELS[method], fontsize=10.5, fontweight="bold", pad=8)
             if col_idx == 0:
-                ax.set_ylabel(PROBLEM_LABELS[problem], fontsize=10.5, fontweight="bold")
+                ax.set_ylabel(PROBLEM_LABELS[problem], fontsize=11.5, fontweight="bold")
 
             if method == "npe_full_data":
                 panel = prepare_panel_data(
@@ -347,6 +367,11 @@ def plot_benchmark_grid(
                     label="Full-data",
                     y_limits=y_limits,
                     offscale_x_offset=0.0,
+                    linestyle="-",
+                    offscale_open=False,
+                    marker_size=BASE_MARKER_SIZE,
+                    marker=FULL_DATA_MARKER,
+                    marker_open=False,
                 )
                 offscale_points += curve_offscale
                 max_actual = max(max_actual, curve_max)
@@ -368,6 +393,10 @@ def plot_benchmark_grid(
                         label=FRACTION_LABELS[epsilon],
                         y_limits=y_limits,
                         offscale_x_offset=OFFSCALE_X_OFFSETS[epsilon],
+                        linestyle="-",
+                        offscale_open=False,
+                        marker_size=BASE_MARKER_SIZE,
+                        marker_open=False,
                     )
                     offscale_points += curve_offscale
                     max_actual = max(max_actual, curve_max)
@@ -375,21 +404,21 @@ def plot_benchmark_grid(
             if row_idx < len(PROBLEM_ORDER) - 1:
                 ax.tick_params(labelbottom=False)
             else:
-                ax.set_xticks(x, [BUDGET_LABELS[b] for b in BUDGET_ORDER], fontsize=8.8)
+                ax.set_xticks(x, [BUDGET_LABELS[b] for b in BUDGET_ORDER], fontsize=9.8)
             if col_idx > 0:
                 ax.tick_params(labelleft=False)
 
     fig.suptitle(
         f"{metric.label} under {MISSINGNESS_LABELS[missingness]} missingness",
-        fontsize=13,
+        fontsize=14,
         fontweight="bold",
         y=0.988,
     )
-    fig.supxlabel("Simulation budget", fontsize=11, y=0.040)
-    fig.supylabel(metric.label, fontsize=11, x=0.012)
+    fig.supxlabel("Simulation budget", fontsize=12, y=0.040)
+    fig.supylabel(metric.label, fontsize=12, x=0.012)
 
     handles = [
-        Line2D([0], [0], color=FULL_DATA_COLOR, marker="o", linewidth=1.0, markersize=3.5, label="Full-data NPE"),
+        Line2D([0], [0], color=FULL_DATA_COLOR, marker=FULL_DATA_MARKER, linewidth=1.0, markersize=5.0, label="Full-data NPE"),
         *[
             Line2D(
                 [0],
@@ -409,7 +438,7 @@ def plot_benchmark_grid(
         bbox_to_anchor=(0.5, 0.955),
         ncol=4,
         frameon=False,
-        fontsize=9,
+        fontsize=10,
         handlelength=2.0,
         columnspacing=1.5,
     )
@@ -426,6 +455,153 @@ def plot_benchmark_grid(
     return fig, report
 
 
+def plot_combined_missingness_grid(
+    df: pd.DataFrame,
+    *,
+    metric: MetricSpec,
+) -> tuple[plt.Figure, FigureReport]:
+    fig, axes = plt.subplots(
+        nrows=len(PROBLEM_ORDER),
+        ncols=len(METHOD_ORDER),
+        figsize=(13.2, 8.4),
+        sharex=True,
+        constrained_layout=False,
+    )
+    x = np.arange(len(BUDGET_ORDER))
+    y_limits = metric_limits(metric)
+    offscale_points = 0
+    max_actual = -math.inf
+
+    for row_idx, problem in enumerate(PROBLEM_ORDER):
+        for col_idx, method in enumerate(METHOD_ORDER):
+            ax = axes[row_idx, col_idx]
+            style_axis(ax, metric, y_limits)
+            if row_idx == 0:
+                ax.set_title(METHOD_LABELS[method], fontsize=10.5, fontweight="bold", pad=8)
+            if col_idx == 0:
+                ax.set_ylabel(PROBLEM_LABELS[problem], fontsize=11.5, fontweight="bold")
+
+            if method == "npe_full_data":
+                panel = prepare_panel_data(
+                    df,
+                    metric=metric,
+                    method=method,
+                    problem=problem,
+                    missingness="mcar",
+                    epsilon=None,
+                )
+                curve_offscale, curve_max = plot_curve(
+                    ax,
+                    x,
+                    panel,
+                    color=FULL_DATA_COLOR,
+                    label="Full-data",
+                    y_limits=y_limits,
+                    offscale_x_offset=0.0,
+                    linestyle="-",
+                    offscale_open=False,
+                    marker_size=COMBINED_MARKER_SIZE,
+                    marker=FULL_DATA_MARKER,
+                    marker_open=False,
+                )
+                offscale_points += curve_offscale
+                max_actual = max(max_actual, curve_max)
+            else:
+                for missingness in COMBINED_MISSINGNESS_ORDER:
+                    for epsilon in FRACTION_ORDER:
+                        panel = prepare_panel_data(
+                            df,
+                            metric=metric,
+                            method=method,
+                            problem=problem,
+                            missingness=missingness,
+                            epsilon=epsilon,
+                        )
+                        curve_offscale, curve_max = plot_curve(
+                            ax,
+                            x,
+                            panel,
+                            color=FRACTION_COLORS[epsilon],
+                            label=f"{MISSINGNESS_LABELS[missingness]} {FRACTION_LABELS[epsilon]}",
+                            y_limits=y_limits,
+                            offscale_x_offset=OFFSCALE_X_OFFSETS[epsilon],
+                            linestyle=COMBINED_MISSINGNESS_LINESTYLES[missingness],
+                            offscale_open=COMBINED_MISSINGNESS_OFFSCALE_OPEN[missingness],
+                            marker_size=COMBINED_MARKER_SIZE,
+                            marker_open=missingness == "mnar",
+                        )
+                        offscale_points += curve_offscale
+                        max_actual = max(max_actual, curve_max)
+
+            if row_idx < len(PROBLEM_ORDER) - 1:
+                ax.tick_params(labelbottom=False)
+            else:
+                ax.set_xticks(x, [BUDGET_LABELS[b] for b in BUDGET_ORDER], fontsize=9.8)
+            if col_idx > 0:
+                ax.tick_params(labelleft=False)
+
+    fig.suptitle(
+        f"{metric.label} under MCAR and MNAR missingness",
+        fontsize=14,
+        fontweight="bold",
+        y=0.988,
+    )
+    fig.supxlabel("Simulation budget", fontsize=12, y=0.040)
+    fig.supylabel(metric.label, fontsize=12, x=0.012)
+    fig.legend(
+        handles=combined_legend_handles(),
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.955),
+        ncol=6,
+        frameon=False,
+        fontsize=9.7,
+        handlelength=2.0,
+        columnspacing=1.15,
+    )
+    fig.subplots_adjust(left=0.075, right=0.995, bottom=0.10, top=0.825, wspace=0.10, hspace=0.16)
+    report = FigureReport(
+        stem=f"{metric.filename_prefix}_mcar_mnar",
+        metric_key=metric.key,
+        missingness="mcar_mnar",
+        display_range=y_limits,
+        offscale_points=offscale_points,
+        max_actual=max_actual if np.isfinite(max_actual) else math.nan,
+        yscale=metric.yscale,
+    )
+    return fig, report
+
+
+def combined_legend_handles() -> list[Line2D]:
+    return [
+        Line2D([0], [0], color=FULL_DATA_COLOR, marker=FULL_DATA_MARKER, linewidth=1.0, markersize=4.8, label="Full-data NPE"),
+        *[
+            Line2D(
+                [0],
+                [0],
+                color=FRACTION_COLORS[epsilon],
+                marker="o",
+                linewidth=1.0,
+                markersize=3.2,
+                label=FRACTION_LABELS[epsilon],
+            )
+            for epsilon in FRACTION_ORDER
+        ],
+        Line2D([0], [0], color="#4a4a4a", linewidth=1.05, linestyle="-", marker="o", markersize=3.2, label="MCAR"),
+        Line2D(
+            [0],
+            [0],
+            color="#4a4a4a",
+            linewidth=1.05,
+            linestyle=COMBINED_MISSINGNESS_LINESTYLES["mnar"],
+            marker="o",
+            markerfacecolor="none",
+            markeredgecolor="#4a4a4a",
+            markersize=3.2,
+            label="MNAR",
+        ),
+    ]
+
+
 def style_axis(
     ax: plt.Axes,
     metric: MetricSpec,
@@ -438,7 +614,7 @@ def style_axis(
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#b8b8b8")
     ax.spines["bottom"].set_color("#b8b8b8")
-    ax.tick_params(axis="both", labelsize=8, length=2.5, color="#777777")
+    ax.tick_params(axis="both", labelsize=9, length=2.5, color="#777777")
     ax.set_yscale(metric.yscale)
     if y_limits is not None:
         ax.set_ylim(*y_limits)
@@ -455,6 +631,11 @@ def plot_curve(
     label: str,
     y_limits: tuple[float, float],
     offscale_x_offset: float,
+    linestyle: str | tuple[int, tuple[float, ...]] = "-",
+    offscale_open: bool = False,
+    marker_size: float = BASE_MARKER_SIZE,
+    marker: str = "o",
+    marker_open: bool = False,
 ) -> tuple[int, float]:
     means = panel["mean"].to_numpy(dtype=float)
     ci95 = panel["ci95"].fillna(0.0).to_numpy(dtype=float)
@@ -465,6 +646,7 @@ def plot_curve(
     lower, upper = y_limits
     in_range = valid & (means <= upper) & (means >= lower)
     offscale = valid & (means > upper)
+    marker_face_color = "none" if marker_open else color
 
     for segment in contiguous_segments(np.where(in_range)[0]):
         ax.errorbar(
@@ -472,9 +654,13 @@ def plot_curve(
             means[segment],
             yerr=ci95[segment],
             color=color,
-            marker="o",
-            markersize=3.1,
-            linewidth=1.05,
+            marker=marker,
+            markersize=marker_size,
+            markerfacecolor=marker_face_color,
+            markeredgecolor=color,
+            markeredgewidth=0.8 if marker_open else 0.0,
+            linewidth=1.0,
+            linestyle=linestyle,
             elinewidth=0.55,
             capsize=1.5,
             capthick=0.55,
@@ -483,14 +669,17 @@ def plot_curve(
         )
 
     if np.any(offscale):
+        facecolors = "none" if offscale_open else color
+        edgecolors = color if offscale_open else "white"
+        linewidths = 0.9 if offscale_open else 0.45
         ax.scatter(
             x[offscale] + offscale_x_offset,
             np.full(np.count_nonzero(offscale), offscale_marker_y(ax, upper)),
             marker="^",
             s=OFFSCALE_MARKER_SIZE,
-            color=color,
-            edgecolors="white",
-            linewidths=0.45,
+            facecolors=facecolors,
+            edgecolors=edgecolors,
+            linewidths=linewidths,
             alpha=OFFSCALE_MARKER_ALPHA,
             zorder=5,
             clip_on=False,
@@ -562,6 +751,35 @@ def caption_text(metric: MetricSpec, missingness: str, report: FigureReport) -> 
     return caption
 
 
+def combined_caption_text(metric: MetricSpec, report: FigureReport) -> str:
+    caption = (
+        f"{metric.label} comparing MCAR and MNAR missingness. Rows are benchmark "
+        "problems and columns are inference strategies. The x-axis shows low, mid, "
+        "and high simulation budgets, displayed as approximately 10^3, 10^4, and "
+        "10^5 simulations. Missing-data methods show 10%, 25%, and 50% missing "
+        "fractions; color encodes missing fraction. MCAR curves are solid, while "
+        "MNAR curves are dashed. Full-Data NPE is shown once as a neutral baseline "
+        "because missingness does not apply. Points are means across five "
+        "independently trained estimators. Error bars show mean +/- 1.96 standard "
+        "errors across training seeds. Reference metrics first summarize reference "
+        "observations within each seed using the established seed-level CSV summaries."
+    )
+    if metric.yscale == "log":
+        caption += " The y-axis is logarithmic; the dashed horizontal reference line denotes a ratio of 1."
+    if report.offscale_points:
+        caption += (
+            " Values exceeding the displayed y-axis range are indicated by upward-facing "
+            "boundary markers; MNAR off-scale markers are open triangles."
+        )
+    caption += (
+        f" Display range: [{format_limit(report.display_range[0])}, "
+        f"{format_limit(report.display_range[1])}]. Off-scale aggregate points: "
+        f"{report.offscale_points}. Maximum plotted aggregate value before display limiting: "
+        f"{format_limit(report.max_actual)}."
+    )
+    return caption
+
+
 def format_limit(value: float) -> str:
     if not np.isfinite(value):
         return "nan"
@@ -576,7 +794,12 @@ def format_limit(value: float) -> str:
 
 def print_figure_report(report: FigureReport) -> None:
     lo, hi = report.display_range
-    print(f"{report.metric_key} / {MISSINGNESS_LABELS[report.missingness]}:")
+    missingness_label = (
+        "MCAR+MNAR"
+        if report.missingness == "mcar_mnar"
+        else MISSINGNESS_LABELS[report.missingness]
+    )
+    print(f"{report.metric_key} / {missingness_label}:")
     print(f"  display range: [{format_limit(lo)}, {format_limit(hi)}]")
     print(f"  y-scale: {report.yscale}")
     print(f"  off-scale points: {report.offscale_points}")
@@ -585,8 +808,10 @@ def print_figure_report(report: FigureReport) -> None:
 
 def write_captions(captions: dict[str, str], outdir: Path) -> Path:
     path = outdir / "captions.md"
+    merged = read_existing_captions(path)
+    merged.update(captions)
     text = ["# Benchmark Figure Captions", ""]
-    for stem, caption in sorted(captions.items()):
+    for stem, caption in sorted(merged.items()):
         text.append(f"## `{stem}`")
         text.append("")
         text.append(textwrap.fill(caption, width=100))
@@ -595,12 +820,40 @@ def write_captions(captions: dict[str, str], outdir: Path) -> Path:
     return path
 
 
+def read_existing_captions(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    captions: dict[str, str] = {}
+    current_stem: str | None = None
+    current_lines: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## `") and line.endswith("`"):
+            if current_stem is not None:
+                captions[current_stem] = " ".join(current_lines).strip()
+            current_stem = line.removeprefix("## `").removesuffix("`")
+            current_lines = []
+        elif current_stem is not None:
+            if line.strip():
+                current_lines.append(line.strip())
+    if current_stem is not None:
+        captions[current_stem] = " ".join(current_lines).strip()
+    return captions
+
+
 def selected_jobs(args: argparse.Namespace) -> list[tuple[str, str]]:
     if args.all:
         return [(metric, missingness) for metric in METRICS for missingness in MISSINGNESS_ORDER]
     if not args.metric or not args.missingness:
         raise SystemExit("Pass --all or both --metric and --missingness.")
     return [(args.metric, args.missingness)]
+
+
+def selected_combined_jobs(args: argparse.Namespace) -> list[str]:
+    if args.all:
+        return list(METRICS)
+    if not args.metric:
+        raise SystemExit("Pass --all or --metric with --combined-mcar-mnar.")
+    return [args.metric]
 
 
 def configure_matplotlib() -> None:
@@ -631,14 +884,24 @@ def main() -> None:
     written: list[Path] = []
     captions: dict[str, str] = {}
     reports: list[FigureReport] = []
-    for metric_key, missingness in selected_jobs(args):
-        metric = METRICS[metric_key]
-        stem = f"{metric.filename_prefix}_{missingness}"
-        fig, report = plot_benchmark_grid(df, metric=metric, missingness=missingness)
-        reports.append(report)
-        print_figure_report(report)
-        written.extend(save_figure(fig, outdir=args.outdir, stem=stem, formats=formats, dpi=args.dpi))
-        captions[stem] = caption_text(metric, missingness, report)
+    if args.combined_mcar_mnar:
+        for metric_key in selected_combined_jobs(args):
+            metric = METRICS[metric_key]
+            stem = f"{metric.filename_prefix}_mcar_mnar"
+            fig, report = plot_combined_missingness_grid(df, metric=metric)
+            reports.append(report)
+            print_figure_report(report)
+            written.extend(save_figure(fig, outdir=args.outdir, stem=stem, formats=formats, dpi=args.dpi))
+            captions[stem] = combined_caption_text(metric, report)
+    else:
+        for metric_key, missingness in selected_jobs(args):
+            metric = METRICS[metric_key]
+            stem = f"{metric.filename_prefix}_{missingness}"
+            fig, report = plot_benchmark_grid(df, metric=metric, missingness=missingness)
+            reports.append(report)
+            print_figure_report(report)
+            written.extend(save_figure(fig, outdir=args.outdir, stem=stem, formats=formats, dpi=args.dpi))
+            captions[stem] = caption_text(metric, missingness, report)
 
     caption_path = write_captions(captions, args.outdir)
     print("Wrote figures:")

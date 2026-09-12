@@ -1295,7 +1295,7 @@ def save_reference_posteriors_hdf5(
     reference_version: str = DEFAULT_REFERENCE_VERSION,
     overwrite: bool = False,
 ) -> None:
-    """Save reference posterior samples using the GAPSBI reference contract."""
+    """Save reference posterior samples using the GapSBI reference contract."""
     validate_reference_arrays(observations, theta_samples)
     output_path = Path(path)
     if output_path.exists() and not overwrite:

@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Simulator(ABC):
-    """Abstract interface for GAPSBI simulators."""
+    """Abstract interface for GapSBI simulators."""
 
     @property
     @abstractmethod
