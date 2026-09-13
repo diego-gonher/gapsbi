@@ -83,6 +83,8 @@ OFFSCALE_MARKER_SIZE = 24
 OFFSCALE_MARKER_ALPHA = 0.55
 BASE_MARKER_SIZE = 3.1
 COMBINED_MARKER_SIZE = 2.8
+FULL_DATA_BASE_MARKER_SIZE = 5.0
+FULL_DATA_COMBINED_MARKER_SIZE = 4.8
 
 
 @dataclass(frozen=True)
@@ -369,7 +371,7 @@ def plot_benchmark_grid(
                     offscale_x_offset=0.0,
                     linestyle="-",
                     offscale_open=False,
-                    marker_size=BASE_MARKER_SIZE,
+                    marker_size=FULL_DATA_BASE_MARKER_SIZE,
                     marker=FULL_DATA_MARKER,
                     marker_open=False,
                 )
@@ -500,7 +502,7 @@ def plot_combined_missingness_grid(
                     offscale_x_offset=0.0,
                     linestyle="-",
                     offscale_open=False,
-                    marker_size=COMBINED_MARKER_SIZE,
+                    marker_size=FULL_DATA_COMBINED_MARKER_SIZE,
                     marker=FULL_DATA_MARKER,
                     marker_open=False,
                 )
