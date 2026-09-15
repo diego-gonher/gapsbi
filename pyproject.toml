@@ -5,7 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gapsbi"
 version = "0.1.0"
+description = "Benchmark and experimentation framework for simulation-based inference under missing data."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
 dependencies = [
     "emcee",
     "h5py",
@@ -16,6 +19,7 @@ dependencies = [
     "scikit-learn",
     "scipy",
     "sbi",
+    "tensorboard",
     "torch",
     "tqdm",
 ]

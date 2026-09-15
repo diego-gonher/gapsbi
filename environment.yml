@@ -10,9 +10,12 @@ dependencies:
   - numpy
   - scipy
   - h5py
+  - pandas
+  - emcee
 
   # ML / SBI
   - pytorch
+  - tensorboard
   - scikit-learn
 
   # Plotting / inspection
