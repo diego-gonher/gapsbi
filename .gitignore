@@ -18,3 +18,4 @@ external_repos/
 paper/
 older_results/
 scripts/compare_full_vs_low_budget_campaign1.py
+CAMPAIGNS.md
