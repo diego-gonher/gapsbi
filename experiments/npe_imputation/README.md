@@ -5,11 +5,16 @@ Naive imputation-only NPE baselines for the benchmark v1 missing-data tasks.
 This experiment family trains NPE on `x_obs` after scaling and imputation, without
 concatenating masks and without any mask-augmented architecture.
 
+Public-repo note: `zero_imputation/` is part of the final GapSBI benchmark and
+paper results. `mean_imputation/` is retained as a legacy/extra baseline for
+experimentation, but it is not part of the reported core benchmark.
+
 ## Baselines
 
-- `zero`: missing entries are replaced with `0.0` in scaled x-space.
-- `mean`: missing entries are replaced with observed-only train feature means in
+- `zero`: core benchmark method; missing entries are replaced with `0.0` in
   scaled x-space.
+- `mean`: legacy/extra baseline; missing entries are replaced with observed-only
+  train feature means in scaled x-space.
 
 Method names recorded in outputs:
 
@@ -32,7 +37,7 @@ Method names recorded in outputs:
 Active configs cover:
 
 - problems: OUP, GLM, GLU, Lotka-Volterra
-- imputations: zero, mean
+- imputations: zero, mean; only zero is part of the reported core benchmark
 - budgets: low `900/100`, mid `9000/1000`, high full `90000/10000`
 - missingness: MCAR, MAR, MNAR
 - missing fractions: `0.10`, `0.25`, `0.50`
@@ -46,7 +51,7 @@ PYTHONPATH=src python experiments/npe_imputation/generate_configs.py
 
 ## Run Queues
 
-Mean imputation only:
+Mean imputation only, retained as a legacy/extra baseline:
 
 ```bash
 bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
@@ -54,7 +59,7 @@ bash experiments/npe_imputation/npe_mean_imputation_run_queue_mid_sim_budget.sh
 bash experiments/npe_imputation/npe_mean_imputation_run_queue_high_sim_budget.sh
 ```
 
-Zero imputation only:
+Zero imputation only, used in the final benchmark:
 
 ```bash
 bash experiments/npe_imputation/npe_zero_imputation_run_queue_low_sim_budget.sh

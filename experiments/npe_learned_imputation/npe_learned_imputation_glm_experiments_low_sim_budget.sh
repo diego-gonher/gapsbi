@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Legacy/extra baseline: deterministic learned imputation is retained for
+# experimentation but is not part of the final reported GapSBI benchmark.
 set -u
 set -o pipefail
 

@@ -2,8 +2,11 @@
 
 Deterministic input-dependent learned imputation + NPE baseline.
 
-This is a legacy/appendix experiment and is not part of the main benchmark
-experiments.
+Public-repo note: this is a legacy/extra experiment and is not part of the final
+GapSBI benchmark or paper results. It is retained for experimentation and
+historical comparison. Some configs use older task/budget conventions, including
+`full_sim_budget` and the legacy `ricker` task, so they should not be treated as
+drop-in members of the final four-task benchmark grid.
 
 This is not the Lueckmann-style learned constant baseline. For that method, use
 `experiments/npe_learned_constant_imputation/`.
@@ -36,6 +39,9 @@ Where `recon_loss` is MSE restricted to missing entries only.
 - You can force `mlp` or `cnn` in config.
 
 ## Run
+
+These commands are examples for the legacy baseline. They are not required for
+reproducing the final benchmark figures.
 
 ```bash
 PYTHONPATH=src python experiments/npe_learned_imputation/train.py \

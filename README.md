@@ -57,7 +57,8 @@ Implemented benchmark methods:
 - Mask-aware transformer embedding with learned attention pooling NPE 
 - Probabilistic learned-imputation NPE
 
-Implemented legacy/appendix methods, not part of the main benchmark:
+Implemented legacy/extra methods, retained for experimentation but not part of
+the reported main benchmark:
 
 - Mean-imputation NPE
 - Deterministic learned-imputation NPE
@@ -532,12 +533,13 @@ PYTHONPATH=src python experiments/npe_full_data/train.py \
   --config experiments/npe_full_data/low_sim_budget/oup_config.yaml
 ```
 
-### Zero/Mean Imputation NPE
+### Zero Imputation NPE
 
 Uses `x_obs` after scaling, then imputes missing entries in scaled x-space.
 
-- `zero`: missing entries become `0.0`
-- `mean`: missing entries become observed-only train feature means
+The core benchmark method is `zero`: missing entries become `0.0`.
+`mean_imputation/` is retained under the same experiment family as a legacy/extra
+baseline, but it is not part of the final reported benchmark.
 
 ```bash
 PYTHONPATH=src python experiments/npe_imputation/train.py \
@@ -554,17 +556,16 @@ PYTHONPATH=src python experiments/npe_imputation/train.py \
   --config experiments/npe_imputation/zero_imputation/low_sim_budget/oup/oup_zero_mcar_eps025_config.yaml
 ```
 
-Budget queues:
+Budget queues for the core zero-imputation method:
 
 ```bash
-bash experiments/npe_imputation/npe_mean_imputation_run_queue_high_sim_budget.sh
-bash experiments/npe_imputation/npe_mean_imputation_run_queue_mid_sim_budget.sh
-bash experiments/npe_imputation/npe_mean_imputation_run_queue_low_sim_budget.sh
-
 bash experiments/npe_imputation/npe_zero_imputation_run_queue_high_sim_budget.sh
 bash experiments/npe_imputation/npe_zero_imputation_run_queue_mid_sim_budget.sh
 bash experiments/npe_imputation/npe_zero_imputation_run_queue_low_sim_budget.sh
 ```
+
+Legacy mean-imputation queues are also kept in `experiments/npe_imputation/` for
+experimentation.
 
 These configs also sample 10,000 posterior draws for the ten fixed reference
 observations after applying deterministic experiment-matched masks and the
@@ -874,10 +875,10 @@ configs/                         # Shared configs and scratch configuration
 data/                            # Generated canonical and local datasets
 experiments/
   npe_full_data/                 # Full-data NPE baseline
-  npe_imputation/                # Zero/mean imputation baselines
+  npe_imputation/                # Zero-imputation baseline plus legacy mean-imputation extra
   npe_mask_augmentation/         # Zero-imputation + mask baseline
   npe_masked_transformer_embedding/ # Mask-aware transformer embedding NPE baseline
-  npe_learned_imputation/        # Learned-imputation baseline
+  npe_learned_imputation/        # Legacy deterministic learned-imputation extra
   npe_probabilistic_learned_imputation/ # Probabilistic learned-imputation NPE
 outputs_high_sim_budget/         # High simulation-budget outputs
 outputs_mid_sim_budget/          # Mid simulation-budget outputs

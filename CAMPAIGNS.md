@@ -33,13 +33,21 @@ Five Training Seeds:
 5. `npe_probabilistic_learned_imputation`: Probabilistic Learned Imputation NPE (RISE-inspired)
 6. `npe_masked_transformer_embedding`: Transfomer Embeddings with NPE
 
+Legacy/extra method families retained in the repository but not included in the
+final reported benchmark:
+
+* `npe_mean_imputation`: per-feature mean imputation baseline under
+  `experiments/npe_imputation/mean_imputation/`.
+* `npe_learned_imputation`: deterministic input-dependent imputation baseline
+  with older task/budget conventions.
+
 Here is another way of conceptualizing these methods:
 
 | Family | Method | Core idea |
 |--------|--------|-----------|
 | **Oracle** | Full-data NPE | Upper bound with no missing data. |
 | **Naive deterministic imputation** | Zero Imputation | Fill missing values with a constant. |
-| | Per-feature Mean Imputation | Fill with empirical feature means. |
+| | Per-feature Mean Imputation | Legacy/extra baseline; fill with empirical feature means. |
 | **Learned deterministic imputation** | Learned Per-feature Imputation | Learn fixed replacement values jointly with NPE. |
 | **Imputation + missingness indicators** | Zero Imputation + Mask Augmentation | Keep naive imputation but explicitly tell the network what was missing. |
 | **Probabilistic imputation** | Probabilistic Learned Imputation | Learn \(p(x_{\rm miss}\mid x_{\rm obs})\) with a RISE-inspired latent imputer. |

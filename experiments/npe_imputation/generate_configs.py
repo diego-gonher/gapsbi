@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parent
 SEEDS = [101, 202, 303, 404, 505]
 PROBLEMS = ("oup", "glm", "glu", "lotka_volterra")
 IMPUTATIONS = ("zero", "mean")
+# `zero` is the core benchmark method. `mean` is retained as a legacy/extra
+# baseline for experimentation and is not part of the reported paper benchmark.
 MECHANISMS = ("mcar", "mar", "mnar")
 EPSILONS = ("010", "025", "050")
 
