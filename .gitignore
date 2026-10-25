@@ -6,6 +6,7 @@ __pycache__/
 data/
 outputs*/
 references/reference_posteriors_v*/
+references/partial_data_references_v1/*.h5
 .env
 src/gapsbi.egg-*
 logs/

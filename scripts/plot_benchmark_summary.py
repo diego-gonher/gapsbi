@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import textwrap
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+
+from reference_aware_plot_input import build_plot_inputs
 
 
 DEFAULT_INPUT = Path("outputs/analysis/full_experiment_results_with_diagnostics.csv")
@@ -151,12 +154,38 @@ def parse_args() -> argparse.Namespace:
         description="Generate SBIBM-style benchmark summary figures.",
     )
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument(
+        "--reference-mode",
+        choices=("full", "partial"),
+        default="full",
+        help=(
+            "Reference metrics for C2ST/mean-shift/covariance-ratio. Full preserves "
+            "the immutable benchmark CSV; partial overlays completed partial-reference metrics."
+        ),
+    )
+    parser.add_argument(
+        "--partial-root",
+        type=Path,
+        default=Path("."),
+        help="Repository root containing outputs/analysis/partial_reference_comparison.",
+    )
+    parser.add_argument(
+        "--adapter-out",
+        type=Path,
+        help="Optional path for the non-mutating reference-aware seed-level plot input CSV.",
+    )
     parser.add_argument("--outdir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--metric", choices=sorted(METRICS), help="Metric to plot.")
     parser.add_argument(
         "--missingness",
         choices=MISSINGNESS_ORDER,
         help="Missingness mechanism to plot.",
+    )
+    parser.add_argument(
+        "--mechanisms",
+        choices=MISSINGNESS_ORDER,
+        nargs="+",
+        help="Restrict --all to these mechanisms; use 'mcar mnar' for revised figures.",
     )
     parser.add_argument(
         "--all",
@@ -844,7 +873,8 @@ def read_existing_captions(path: Path) -> dict[str, str]:
 
 def selected_jobs(args: argparse.Namespace) -> list[tuple[str, str]]:
     if args.all:
-        return [(metric, missingness) for metric in METRICS for missingness in MISSINGNESS_ORDER]
+        mechanisms = args.mechanisms or MISSINGNESS_ORDER
+        return [(metric, missingness) for metric in METRICS for missingness in mechanisms]
     if not args.metric or not args.missingness:
         raise SystemExit("Pass --all or both --metric and --missingness.")
     return [(args.metric, args.missingness)]
@@ -879,7 +909,16 @@ def main() -> None:
     formats = args.formats or ["pdf", "png"]
     configure_matplotlib()
 
-    df = load_results(args.input)
+    if args.reference_mode == "full":
+        # Read the original CSV directly: this remains the historical default path.
+        df = load_results(args.input)
+    else:
+        inputs = build_plot_inputs(args.input, args.partial_root)
+        df = inputs.partial
+        if args.adapter_out is not None:
+            args.adapter_out.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(args.adapter_out, index=False)
+            print(f"Wrote reference-aware plot input: {args.adapter_out}")
     validate_results(df)
     df = successful_rows(df)
 
@@ -906,6 +945,25 @@ def main() -> None:
             captions[stem] = caption_text(metric, missingness, report)
 
     caption_path = write_captions(captions, args.outdir)
+    if args.reference_mode == "partial":
+        manifest_path = args.outdir.parent / "reference_mode_manifest.json"
+        manifest_path.write_text(json.dumps({
+            "reference_mode": "partial",
+            "source_enriched_csv": str(args.input),
+            "partial_metrics_root": str(args.partial_root),
+            "reference_dependent_metrics": [
+                "reference_c2st_accuracy_mean",
+                "reference_posterior_mean_shift_median",
+                "reference_covariance_trace_ratio_median",
+            ],
+            "reference_independent_metrics_preserved": ["tarp_mae", "sbc", "training_cost", "inference_cost"],
+            "lotka_volterra_mnar_eps050": {
+                "partial_original_reference_indices": [0, 1, 3, 4, 5, 6, 8, 9],
+                "missing_partial_reference_indices": [2, 7],
+                "caveat": "Partial seed aggregates use up to eight reference observations; original full metrics remain ten-observation aggregates.",
+            },
+        }, indent=2), encoding="utf-8")
+        print(f"Wrote reference-mode manifest: {manifest_path}")
     print("Wrote figures:")
     for path in written:
         print(f"  {path}")
