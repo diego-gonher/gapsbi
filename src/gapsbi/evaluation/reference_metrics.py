@@ -16,6 +16,46 @@ DEFAULT_REFERENCE_METRICS = (
     "covariance_trace_ratio",
 )
 
+# Publication-facing seed aggregates.  This is deliberately separate from
+# ``aggregate_reference_metrics``, whose mean/std summaries support general
+# diagnostics and historical training-time reporting.
+FINAL_REFERENCE_AGGREGATION = {
+    "c2st_accuracy": "mean",
+    "posterior_mean_shift": "median",
+    "covariance_trace_ratio": "median",
+}
+FINAL_REFERENCE_AGGREGATION_POLICY = "original_gapsbi_finite_observations_v1"
+
+
+def aggregate_final_reference_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate final benchmark rows with the established finite-row policy.
+
+    C2ST uses the finite-reference mean; posterior mean shift and covariance
+    trace ratio use finite-reference medians. Invalid or non-finite rows are
+    reported rather than imputed.
+    """
+    rows = list(rows)
+    result: dict[str, Any] = {
+        "aggregation_policy": FINAL_REFERENCE_AGGREGATION_POLICY,
+        "num_reference_observations": len(rows),
+        "invalid_reference_indices": [
+            int(row["reference_index"])
+            for row in rows
+            if row.get("reference_metrics_valid") is not True
+        ],
+    }
+    for metric, reducer in FINAL_REFERENCE_AGGREGATION.items():
+        values = np.asarray([row.get(metric, float("nan")) for row in rows], dtype=float)
+        finite = values[np.isfinite(values)]
+        result[f"{metric}_finite_count"] = int(finite.size)
+        result[f"{metric}_invalid_count"] = int(values.size - finite.size)
+        result[f"{metric}_all_observations_valid"] = bool(finite.size == values.size)
+        result[metric] = (
+            float(np.mean(finite) if reducer == "mean" else np.median(finite))
+            if finite.size else float("nan")
+        )
+    return result
+
 
 def c2st_accuracy(
     x: np.ndarray,

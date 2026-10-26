@@ -16,7 +16,11 @@ import h5py
 import numpy as np
 import torch
 
-from gapsbi.evaluation.reference_metrics import compute_reference_metrics
+from gapsbi.evaluation.reference_metrics import (
+    FINAL_REFERENCE_AGGREGATION_POLICY,
+    aggregate_final_reference_metrics,
+    compute_reference_metrics,
+)
 from gapsbi.references import (
     load_partial_data_reference_posteriors_hdf5,
     load_reference_posteriors_hdf5,
@@ -91,31 +95,9 @@ def _partial_path(root: Path, mechanism: str, fraction: float, *, problem: str =
     return root / f"{problem}_{mechanism}_eps{int(round(fraction * 100)):03d}_references.h5"
 
 
-AGGREGATION_METHODS = {
-    "c2st_accuracy": "mean",
-    "posterior_mean_shift": "median",
-    "covariance_trace_ratio": "median",
-}
-
-
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Match compile_experiment_results.py's finite-list convention."""
-    result: dict[str, Any] = {
-        "aggregation_policy": "original_gapsbi_finite_observations_v1",
-        "num_reference_observations": len(rows),
-        "invalid_reference_indices": [
-            int(row["reference_index"]) for row in rows
-            if row.get("reference_metrics_valid") is not True
-        ],
-    }
-    for metric, reducer in AGGREGATION_METHODS.items():
-        values = np.asarray([row.get(metric, float("nan")) for row in rows], dtype=float)
-        finite = values[np.isfinite(values)]
-        result[f"{metric}_finite_count"] = int(finite.size)
-        result[f"{metric}_invalid_count"] = int(values.size - finite.size)
-        result[f"{metric}_all_observations_valid"] = bool(finite.size == values.size)
-        result[metric] = float(np.mean(finite) if reducer == "mean" else np.median(finite)) if finite.size else float("nan")
-    return result
+    """Compatibility wrapper for the centralized final-benchmark policy."""
+    return aggregate_final_reference_metrics(rows)
 
 
 def _load_completed_output(path: Path) -> dict[str, Any]:
@@ -134,7 +116,7 @@ def refresh_aggregates(path: Path) -> dict[str, Any]:
     result = _load_completed_output(path)
     for target in ("full_reference", "partial_reference"):
         result[target]["aggregate"] = _aggregate(result[target]["rows"])
-    result["aggregate_policy"] = "original_gapsbi_finite_observations_v1"
+    result["aggregate_policy"] = FINAL_REFERENCE_AGGREGATION_POLICY
     with path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
     return result
@@ -227,7 +209,7 @@ def evaluate_one(sample_path: Path, output_path: Path, full_path: Path, partial_
     result = {"schema": "gapsbi_reference_comparison_v1", "problem": problem, "mechanism": mechanism,
               "fraction": fraction, "method": METHODS[method], "budget": output_path.parents[5].name.replace("outputs_", "").replace("_sim_budget", ""),
               "seed": seed, "metric_settings": kwargs | {"progress": False}, "provenance": provenance,
-              "aggregate_policy": "original_gapsbi_finite_observations_v1",
+              "aggregate_policy": FINAL_REFERENCE_AGGREGATION_POLICY,
               "sampling_failure_reference_indices": full_invalid,
               "full_reference": {"rows": full_rows, "aggregate": _aggregate(full_rows)},
               "partial_reference": {"rows": partial_rows, "aggregate": _aggregate(partial_rows)}}
@@ -252,7 +234,7 @@ def evaluate_partial_only(sample_path: Path, output_path: Path, full_path: Path,
     result = {"schema": "gapsbi_partial_reference_only_v1", "problem": problem, "mechanism": mechanism,
               "fraction": fraction, "method": METHODS[method], "budget": output_path.parents[5].name.replace("outputs_", "").replace("_sim_budget", ""),
               "seed": seed, "metric_settings": kwargs | {"progress": False}, "provenance": provenance,
-              "aggregate_policy": "original_gapsbi_finite_observations_v1", "partial_reference": {
+              "aggregate_policy": FINAL_REFERENCE_AGGREGATION_POLICY, "partial_reference": {
                   "rows": rows, "aggregate": _aggregate(rows), "original_reference_indices": original_indices.tolist(),
                   "missing_original_reference_indices": sorted(set(range(10)) - set(original_indices.tolist())),
                   "reference_artifact_metadata": {key: partial_meta.get(key) for key in ("failed_reference_indices", "sparse_reference_artifact")},

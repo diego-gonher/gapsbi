@@ -9,6 +9,7 @@ from gapsbi.evaluation.reference_metrics import (
     aggregate_reference_metrics,
     c2st_accuracy,
     compute_reference_metrics,
+    aggregate_final_reference_metrics,
     covariance_trace_ratio,
     posterior_mean_shift,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "aggregate_reference_metrics",
     "c2st_accuracy",
     "compute_reference_metrics",
+    "aggregate_final_reference_metrics",
     "compute_sbc_ranks_from_samples",
     "compute_tarp_from_samples",
     "covariance_trace_ratio",

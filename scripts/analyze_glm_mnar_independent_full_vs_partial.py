@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Version the GLM/MNAR direct-reference analysis with independent full draws."""
+"""Compatibility implementation for the canonical reference-target analysis.
+
+Public workflows should invoke ``analyze_full_vs_partial_references.py``. This
+module retains its filename for reproducibility and supplies that entry point's
+single corrected implementation.
+"""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +23,7 @@ from gapsbi.analysis.full_vs_partial_references import (
     cross_sample_duplicate_summary,
     matched_reference_indices,
 )
-from gapsbi.evaluation.reference_metrics import compute_reference_metrics
+from gapsbi.evaluation.reference_metrics import FINAL_REFERENCE_AGGREGATION, compute_reference_metrics
 from gapsbi.references import (
     load_partial_data_reference_posteriors_hdf5,
     load_reference_posteriors_hdf5,
@@ -27,7 +32,8 @@ from gapsbi.references import (
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "outputs/analysis/full_vs_partial_references"
-OUT = ROOT / "outputs/analysis/full_vs_partial_references_v2"
+# A fresh public-facing location; the versioned v1/v2 artifacts remain immutable.
+OUT = ROOT / "outputs/analysis/reference_target_comparison"
 INDEPENDENT = ROOT / "references/reference_posteriors_v1/glm_references_independent_replica_v1.h5"
 FRACTIONS = (.10, .25, .50)
 METRIC_SETTINGS = dict(seed=91357, max_samples_per_observation=10_000, c2st_max_samples_per_observation=2_000,
@@ -79,7 +85,7 @@ def make_figure(aggregate: pd.DataFrame, metric: str, filename: str, ylabel: str
 def aggregate_glm(rows: list[dict[str, Any]], fraction: float) -> dict[str, Any]:
     result: dict[str, Any] = {"problem": "glm", "mechanism": "mnar", "missing_fraction": fraction,
                               "num_matched_references": len(rows), "original_reference_indices": np.arange(len(rows))}
-    for offset, (metric, statistic) in enumerate((("c2st_accuracy", "mean"), ("posterior_mean_shift", "median"), ("covariance_trace_ratio", "median"))):
+    for offset, (metric, statistic) in enumerate(FINAL_REFERENCE_AGGREGATION.items()):
         point, low, high, std = bootstrap_interval(np.asarray([row[metric] for row in rows]), statistic=statistic,
                                                     seed=METRIC_SETTINGS["seed"] + offset + round(fraction * 100) * 10,
                                                     draws=BOOTSTRAP_DRAWS)
@@ -175,7 +181,7 @@ def main() -> None:
                      "preserved_base_analysis": str(args.base),
                      "limitations": list(base_manifest.get("limitations", [])) + ["GLM/MNAR C2ST uses an independent full-reference MCMC replica; moment differences include independent Monte Carlo variation."]})
     atomic_json(OUT / "analysis_manifest.json", manifest)
-    print(f"Completed corrected GLM/MNAR analysis: {OUT}")
+    print(f"Completed canonical corrected reference-target analysis: {OUT}")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kendalltau, pearsonr, spearmanr
 
+from gapsbi.evaluation.reference_metrics import FINAL_REFERENCE_AGGREGATION
+
 from plot_benchmark_summary import (  # Reuse the paper plotting conventions.
     BUDGET_LABELS, BUDGET_ORDER, FRACTION_COLORS, FRACTION_LABELS,
     FRACTION_ORDER, METHOD_LABELS, METHOD_ORDER, METRICS, style_axis,
@@ -30,9 +32,8 @@ BUDGET_X = np.asarray([1e3, 1e4, 1e5], dtype=float)
 # Display-only symmetric log-space separation. Values and budget identities are unchanged.
 REFERENCE_X_FACTORS = {"full": 10 ** -0.012, "partial": 10 ** 0.012}
 OBSERVATION_REDUCERS = {
-    "c2st": "mean",
-    "mean_shift": "median",
-    "covariance_trace_ratio": "median",
+    label: FINAL_REFERENCE_AGGREGATION[field]
+    for label, (field, _) in METRIC_FIELDS.items()
 }
 
 

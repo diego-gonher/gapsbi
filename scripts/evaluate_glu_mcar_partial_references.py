@@ -1,7 +1,8 @@
-"""Evaluate saved GLU MCAR checkpoints against partial-data references.
+"""Historical GLU/MCAR checkpoint-resampling evaluator.
 
-This is intentionally limited to the two naive methods already trained in the
-benchmark: zero imputation and zero-imputation-plus-mask augmentation.
+Use :mod:`scripts.evaluate_partial_references` for final benchmark reporting.
+This retained utility reconstructs two legacy GLU/MCAR checkpoint posteriors;
+it is useful only for reproducing its historical payload format.
 """
 from __future__ import annotations
 

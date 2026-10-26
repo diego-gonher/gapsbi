@@ -157,10 +157,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reference-mode",
         choices=("full", "partial"),
-        default="full",
+        default="partial",
         help=(
-            "Reference metrics for C2ST/mean-shift/covariance-ratio. Full preserves "
-            "the immutable benchmark CSV; partial overlays completed partial-reference metrics."
+            "Reference metrics for C2ST/mean-shift/covariance-ratio. Partial is the "
+            "release default; full preserves the immutable historical benchmark CSV."
         ),
     )
     parser.add_argument(
@@ -185,7 +185,7 @@ def parse_args() -> argparse.Namespace:
         "--mechanisms",
         choices=MISSINGNESS_ORDER,
         nargs="+",
-        help="Restrict --all to these mechanisms; use 'mcar mnar' for revised figures.",
+        help="Restrict --all to these mechanisms; default is the release scope: MCAR and MNAR.",
     )
     parser.add_argument(
         "--all",
@@ -873,7 +873,7 @@ def read_existing_captions(path: Path) -> dict[str, str]:
 
 def selected_jobs(args: argparse.Namespace) -> list[tuple[str, str]]:
     if args.all:
-        mechanisms = args.mechanisms or MISSINGNESS_ORDER
+        mechanisms = args.mechanisms or COMBINED_MISSINGNESS_ORDER
         return [(metric, missingness) for metric in METRICS for missingness in mechanisms]
     if not args.metric or not args.missingness:
         raise SystemExit("Pass --all or both --metric and --missingness.")

@@ -6,12 +6,33 @@ import numpy as np
 import pytest
 
 from gapsbi.evaluation.reference_metrics import (
+    FINAL_REFERENCE_AGGREGATION_POLICY,
+    aggregate_final_reference_metrics,
     aggregate_reference_metrics,
     c2st_accuracy,
     compute_reference_metrics,
     covariance_trace_ratio,
     posterior_mean_shift,
 )
+
+
+def test_final_reference_aggregation_preserves_policy_and_nonfinite_rows() -> None:
+    rows = [
+        {"reference_index": 0, "reference_metrics_valid": True,
+         "c2st_accuracy": .5, "posterior_mean_shift": 1., "covariance_trace_ratio": 2.},
+        {"reference_index": 1, "reference_metrics_valid": True,
+         "c2st_accuracy": 1., "posterior_mean_shift": 9., "covariance_trace_ratio": 8.},
+        {"reference_index": 7, "reference_metrics_valid": False,
+         "c2st_accuracy": float("nan"), "posterior_mean_shift": float("nan"),
+         "covariance_trace_ratio": float("nan")},
+    ]
+    aggregate = aggregate_final_reference_metrics(rows)
+    assert aggregate["aggregation_policy"] == FINAL_REFERENCE_AGGREGATION_POLICY
+    assert aggregate["invalid_reference_indices"] == [7]
+    assert aggregate["c2st_accuracy"] == pytest.approx(.75)
+    assert aggregate["posterior_mean_shift"] == pytest.approx(5.)
+    assert aggregate["covariance_trace_ratio"] == pytest.approx(5.)
+    assert aggregate["c2st_accuracy_finite_count"] == 2
 
 
 def test_posterior_mean_shift_is_euclidean_mean_distance() -> None:

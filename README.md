@@ -107,9 +107,9 @@ dependencies are documented in [docs/workflows.md](docs/workflows.md).
 6. Aggregate partial-reference comparisons with
    `scripts/analyze_partial_reference_comparison.py` and create benchmark plots
    with `scripts/plot_benchmark_summary.py --reference-mode partial`.
-7. Treat `scripts/analyze_full_vs_partial_references.py` plus
-   `scripts/analyze_glm_mnar_independent_full_vs_partial.py` as a separate
-   reference-target diagnostic; the latter is authoritative for GLM/MNAR.
+7. Run `scripts/analyze_full_vs_partial_references.py` for the separate
+   reference-target diagnostic; it applies the authoritative independent
+   full-reference correction for GLM/MNAR.
 
 Training-time reference metrics compare masked estimator inputs with
 full-data references. They are preserved as historical full-information
@@ -277,24 +277,25 @@ outputs/analysis/aggregates/
 
 ## Plotting
 
-Generate historical full-reference scalar figures:
+Generate the release-facing partial-reference figures (the default, MCAR/MNAR
+only):
 
 ```bash
-PYTHONPATH=src python scripts/plot_benchmark_summary.py --all
+conda run -n gapsbi_env env PYTHONPATH=src python scripts/plot_benchmark_summary.py --all
 ```
 
-Generate the release-facing partial-reference figures:
+Generate historical full-reference scalar figures explicitly:
 
 ```bash
-PYTHONPATH=src python scripts/plot_benchmark_summary.py \
-  --reference-mode partial --all
+conda run -n gapsbi_env env PYTHONPATH=src python scripts/plot_benchmark_summary.py \
+  --reference-mode full --all --mechanisms mcar mar mnar
 ```
 
 Generate combined MCAR and MNAR release figures with partial-data references:
 
 ```bash
-PYTHONPATH=src python scripts/plot_benchmark_summary.py \
-  --reference-mode partial --combined-mcar-mnar --all
+conda run -n gapsbi_env env PYTHONPATH=src python scripts/plot_benchmark_summary.py \
+  --combined-mcar-mnar --all
 ```
 
 Generate TARP coverage curves:
@@ -326,9 +327,12 @@ outputs/analysis/figures/
 
 ## Diagnostics and Limitations
 
-The full-versus-partial-reference study is diagnostic only. For GLM/MNAR it
-must use the independent full-reference replica and corrected analysis, because
-the partial artifact can intentionally reuse canonical full-reference draws.
+The full-versus-partial-reference study is diagnostic only. Run
+`scripts/analyze_full_vs_partial_references.py`; it uses the independent
+full-reference replica for GLM/MNAR because the partial artifact can
+intentionally reuse canonical full-reference draws. It writes a new,
+public-facing `outputs/analysis/reference_target_comparison/` directory and
+does not overwrite the versioned historical analyses.
 
 At LV/MNAR 50%, only original reference indices `[0, 1, 3, 4, 5, 6, 8, 9]`
 have feasible partial references. Aggregates report the available eight

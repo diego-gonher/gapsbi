@@ -36,10 +36,10 @@ not a primary benchmark metric.
 | Full-data references | `scripts/generate_reference_posteriors.py` | `p(theta | x_full)` reference artifacts. |
 | Partial-data references | `scripts/generate_*_partial_data_reference_posteriors.py` | Task/mechanism-specific `p(theta | x_obs, mask)` artifacts. |
 | Training | `experiments/*/train.py` with committed YAML | Checkpoint, posterior draws, calibration diagnostics, historical full-reference diagnostics. |
-| Final estimator evaluation | `scripts/evaluate_partial_references.py --partial-only` | Provenance-checked partial-reference metric rows and aggregates. |
+| Final estimator evaluation | `scripts/evaluate_partial_references.py --partial-only` | Authoritative provenance-checked partial-reference metric rows and aggregates. |
 | Partial-reference comparison | `scripts/analyze_partial_reference_comparison.py` | Seed-level and aggregate comparisons, failure reporting, and diagnostic figures. |
-| Benchmark plots | `scripts/plot_benchmark_summary.py --reference-mode partial` | Partial-reference benchmark figures without rewriting historical metrics. |
-| Direct reference-target study | `scripts/analyze_full_vs_partial_references.py`, then `scripts/analyze_glm_mnar_independent_full_vs_partial.py` | Diagnostic full-versus-partial study; the corrected GLM/MNAR analysis is authoritative. |
+| Benchmark plots | `scripts/plot_benchmark_summary.py --all` | Default partial-reference MCAR/MNAR figures without rewriting historical metrics. |
+| Direct reference-target study | `scripts/analyze_full_vs_partial_references.py` | Canonical diagnostic full-versus-partial study with corrected independent GLM/MNAR full samples. |
 
 The first four stages have task-specific details by design. In particular, the
 reference samplers differ between analytic, grid, MCMC, importance, and
@@ -69,6 +69,20 @@ The post-hoc evaluator is authoritative because it validates the saved
 unscaled/scaled estimator draws, checkpoint provenance, full-reference
 observation identity, partial-reference conditioning, and sparse original
 reference indices before computing metrics.
+
+Use the saved-draw evaluator rather than the retained
+`evaluate_glu_mcar_partial_references.py` checkpoint-resampling utility. A
+representative GLU/MCAR comparison confirmed identical saved posterior draws
+and per-reference metrics; the latter remains only to reproduce its historical
+payload format. Final seed aggregates use one centralized policy: finite-row
+mean C2ST, finite-row median posterior mean shift, and finite-row median
+covariance-trace ratio. Non-finite rows remain invalid and are counted.
+
+The canonical reference-target command reads immutable historical v1
+non-GLM/MNAR analysis outputs, replaces exactly the 30 GLM/MNAR rows with the
+independent-full correction, retains all 238 matched comparisons, and writes
+to `outputs/analysis/reference_target_comparison/`. The old versioned analysis
+directories and compatibility script are preserved.
 
 ## Known limitations and failure handling
 
