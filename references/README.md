@@ -121,3 +121,29 @@ PYTHONPATH=src python scripts/generate_reference_posteriors.py \
   --problem glu \
   --overwrite
 ```
+
+## GLM/MNAR independent full-reference replica
+
+`glm_mnar_eps{010,025,050}_references.h5` implements the exact finite
+compatible-completion posterior mixture. For 23 of its 30 reference entries,
+the observed binary values and MNAR mask determine one compatible completion,
+so the partial target equals the full-data target. The remaining seven entries
+have an alternative completion with negligible estimated mass (at most
+`1.48e-6`). This is a property of this specific self-censoring construction,
+not a general claim about MNAR mechanisms.
+
+The partial artifacts intentionally reuse canonical full-reference samples for
+their dominant component. Therefore direct C2ST between those copied arrays is
+invalid: identical rows can receive opposing labels in cross-validation folds.
+The versioned independent replica
+`glm_references_independent_replica_v1.h5` is a fresh, explicitly seeded
+`emcee` run on the immutable canonical observations. It is used only by the
+corrected direct reference-posterior analysis in
+`outputs/analysis/full_vs_partial_references_v2/`; it does not alter estimator
+benchmarks or any partial-data reference artifact.
+
+The correction records duplicate-row preflight checks, old-full versus
+independent-full null controls, and classifier-seed sensitivity. Independent
+samples can produce small nonzero posterior mean shifts and non-unit trace
+ratios even when the underlying targets coincide. At these sample sizes, C2ST
+cannot resolve alternative mixture components with probabilities near `1e-6`.

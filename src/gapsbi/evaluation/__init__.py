@@ -1,4 +1,10 @@
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+from gapsbi.evaluation.lc2st import (
+    derangement,
+    farthest_reference_indices,
+    mask_augmented_context,
+    select_one_finite_draw_per_observation,
+)
 from gapsbi.evaluation.reference_metrics import (
     aggregate_reference_metrics,
     c2st_accuracy,
@@ -16,6 +22,10 @@ __all__ = [
     "compute_sbc_ranks_from_samples",
     "compute_tarp_from_samples",
     "covariance_trace_ratio",
+    "derangement",
+    "farthest_reference_indices",
+    "mask_augmented_context",
     "posterior_mean_shift",
     "sample_posteriors_once",
+    "select_one_finite_draw_per_observation",
 ]

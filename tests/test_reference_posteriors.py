@@ -28,6 +28,7 @@ from gapsbi.references import (
     glm_observed_log_likelihood,
     glm_observed_log_prob,
     find_glm_observed_map,
+    run_glm_emcee_reference,
     run_glm_observed_independence_mh,
     load_reference_posteriors_hdf5,
     load_glu_mcar_partial_data_reference_posteriors_hdf5,
@@ -737,6 +738,16 @@ def test_generate_glm_reference_posteriors_contract_short_mcmc() -> None:
     assert reference_data["mcmc_trace"].shape == (1, 6, 3, 3)
     assert reference_data["num_nonfinite_prior_log_prob"] == 0
     assert np.all(np.isfinite(theta_samples))
+
+
+def test_glm_emcee_seed_controls_internal_sampler_randomness() -> None:
+    simulator = GLMSimulator(dim=3, duration=12, summary="raw")
+    x_full = simulator.simulate(np.zeros(3), np.random.default_rng(7))
+    settings = dict(simulator=simulator, num_walkers=12, burn_in_steps=8,
+                    production_steps=10, initial_scale=.05, emcee_seed=345)
+    first = run_glm_emcee_reference(x_full, rng=np.random.default_rng(123), **settings)
+    second = run_glm_emcee_reference(x_full, rng=np.random.default_rng(123), **settings)
+    np.testing.assert_array_equal(first["chain"], second["chain"])
 
 
 def test_plot_reference_mcmc_traces_saves_when_available(tmp_path: Path) -> None:

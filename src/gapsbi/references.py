@@ -1158,6 +1158,7 @@ def run_glm_emcee_reference(
     production_steps: int,
     initial_scale: float,
     rng: np.random.Generator,
+    emcee_seed: int | None = None,
 ) -> dict[str, np.ndarray | float]:
     """Run one vectorized emcee ensemble for a raw GLM observation."""
     import emcee
@@ -1180,6 +1181,11 @@ def run_glm_emcee_reference(
         log_prob_fn,
         vectorize=True,
     )
+    # emcee otherwise initializes its private RandomState from NumPy's global
+    # legacy RNG.  Supplying this optional seed makes a reference run fully
+    # reproducible without mutating global process state.
+    if emcee_seed is not None:
+        sampler.random_state = np.random.RandomState(int(emcee_seed)).get_state()
     sampler.run_mcmc(initial_state, burn_in_steps, progress=False)
     sampler.reset()
     sampler.run_mcmc(None, production_steps, progress=False)
