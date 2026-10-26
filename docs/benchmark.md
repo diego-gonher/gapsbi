@@ -47,7 +47,7 @@ estimator failure, and corresponding aggregates use eight observations.
 ## Reproduction
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.pinned.yml
 conda run -n gapsbi_env pip install -e .
 conda run -n gapsbi_env env PYTHONPATH=src python -m pytest tests -q
 
@@ -75,6 +75,25 @@ Versioned release artifacts are immutable. MCMC and importance procedures are
 reproducible from tracked source, seeds, and metadata, but not guaranteed
 bitwise identical across operating systems, BLAS libraries, or parallel MCMC
 scheduling.
+
+`environment.pinned.yml` records the validated Python 3.11.15 top-level stack
+(PyTorch 2.10.0, SBI 0.26.1, NumPy 2.4.4, SciPy 1.17.1, scikit-learn 1.8.0,
+emcee 3.1.6, and the plotting/HDF5 dependencies). It is a portable pinned
+specification, not an explicit binary lock: create it on the intended platform
+with Conda. `environment.yml` is retained for less constrained development.
+For headless systems, set `MPLCONFIGDIR` to a writable temporary directory
+before invoking plotting or tests.
+
+Ignored historical result trees can contain machine-local provenance paths.
+Never edit their scientific artifacts in place. To prepare a distributable copy
+instead, use the non-destructive exporter; repository-local paths become
+relative and external local paths are redacted:
+
+```bash
+conda run -n gapsbi_env python scripts/export_release_provenance.py \
+  --input outputs/analysis/full_vs_partial_references_v2 \
+  --output release_provenance/full_vs_partial_references_v2
+```
 
 ## Evaluation, failures, and direct target analysis
 

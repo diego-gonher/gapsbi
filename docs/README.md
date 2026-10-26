@@ -8,11 +8,12 @@ replace their provenance metadata or alter historical results.
   entry points, evaluation targets, naming conventions, diagnostics, and
   migration boundaries.
 * [Benchmark and reproduction guide](benchmark.md): posterior targets,
-  task-specific references, commands, reliability reporting, and limitations.
+  task-specific references, commands, reliability reporting, environment
+  recreation, release-provenance export, and limitations.
 * [Reference artifact documentation](../references/README.md): HDF5 contracts,
   task-specific full-reference procedures, and reference diagnostics.
 * [Partial-reference artifact documentation](../references/partial_data_references_v1/README.md):
   stored partial-data conditioning variables and sparse LV/MNAR provenance.
 
-Reference metadata, committed configurations, and the pinned Conda environment
+Reference metadata, committed configurations, and `environment.pinned.yml`
 provide the reproducibility boundary for the validated release.

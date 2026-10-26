@@ -18,16 +18,20 @@ for the authoritative workflow and scope boundaries.
 
 ## Installation
 
-Create the conda environment and install the package in editable mode:
+For the validated release environment, create a fresh environment from the
+pinned specification and install the package in editable mode:
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.pinned.yml
 conda activate gapsbi_env
 pip install -e .
 ```
 
-GapSBI requires Python `>=3.11`. The main dependencies are declared in
-`pyproject.toml` and `environment.yml`.
+`environment.yml` remains the portable, minimally constrained development
+specification. `environment.pinned.yml` pins the validated top-level package
+versions; Conda still chooses platform-specific low-level builds. See the
+[benchmark guide](docs/benchmark.md#reproduction) for platform and stochastic
+reproducibility limits.
 
 ## Validated Benchmark Scope
 
