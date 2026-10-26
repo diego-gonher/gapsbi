@@ -6,6 +6,11 @@ Lotka--Volterra under MCAR and MNAR missingness at 10%, 25%, and 50% nominal
 missingness. Its primary posterior-fidelity evaluation uses partial-data
 references conditioned on the realized observation and mask.
 
+The benchmark target is `p(theta | x_obs, mask)`, while retained historical
+training diagnostics target `p(theta | x_full)`. The
+[benchmark and reproduction guide](docs/benchmark.md) gives the mathematical
+targets, task-specific reference algorithms, end-to-end commands, and limits.
+
 The repository also retains MAR configurations, exploratory simulators, and
 diagnostic work. Those components are useful research history, but are outside
 the validated release benchmark. See [the workflow guide](docs/workflows.md)

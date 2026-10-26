@@ -5,6 +5,9 @@ __pycache__/
 .ipynb_checkpoints/
 data/
 outputs*/
+# Ad-hoc root-level evaluator manifests; use outputs/analysis/ instead.
+/partial_data_reference_evaluation_*.json
+/partial_reference_comparison_*_with_partial_references.json
 references/reference_posteriors_v*/
 references/partial_data_references_v1/*.h5
 .env

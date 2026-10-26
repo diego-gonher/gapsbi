@@ -38,6 +38,7 @@ not a primary benchmark metric.
 | Training | `experiments/*/train.py` with committed YAML | Checkpoint, posterior draws, calibration diagnostics, historical full-reference diagnostics. |
 | Final estimator evaluation | `scripts/evaluate_partial_references.py --partial-only` | Authoritative provenance-checked partial-reference metric rows and aggregates. |
 | Partial-reference comparison | `scripts/analyze_partial_reference_comparison.py` | Seed-level and aggregate comparisons, failure reporting, and diagnostic figures. |
+| Numerical reliability report | `scripts/report_evaluation_failures.py` | Reproducible seed-detail and grouped nonfinite-evaluation tables. |
 | Benchmark plots | `scripts/plot_benchmark_summary.py --all` | Default partial-reference MCAR/MNAR figures without rewriting historical metrics. |
 | Direct reference-target study | `scripts/analyze_full_vs_partial_references.py` | Canonical diagnostic full-versus-partial study with corrected independent GLM/MNAR full samples. |
 
@@ -91,7 +92,9 @@ directories and compatibility script are preserved.
   it is not a ten-reference matched comparison.
 * Estimator sampling can fail or produce non-finite values. The evaluation
   records invalid rows and finite counts; it does not fabricate replacement
-  scores.
+  scores. `report_evaluation_failures.py` separately reports unavailable
+  reference posteriors and invalid estimator-reference rows, by task,
+  mechanism, fraction, method, budget, and seed.
 * The GLM/MNAR partial artifact intentionally reuses canonical full-reference
   draws for dominant completion components. Direct C2ST between copied rows is
   invalid. The independent-replica generation and corrected GLM/MNAR analysis
@@ -130,6 +133,11 @@ rather than distributing posterior samples. The partial-reference README
 contains the complete eight-command MCAR/MNAR regeneration matrix. Use stored
 artifact metadata and committed source together when reproducing a validated
 campaign.
+
+The [benchmark and reproduction guide](benchmark.md) contains the canonical
+environment, end-to-end commands, posterior-target definitions, and
+task-specific reference algorithms. It is the detailed companion to this
+workflow index; artifact READMEs retain only their schema/provenance contracts.
 
 ## Historical and experimental components
 

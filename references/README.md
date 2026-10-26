@@ -144,7 +144,7 @@ The versioned independent replica
 `glm_references_independent_replica_v1.h5` is a fresh, explicitly seeded
 `emcee` run on the immutable canonical observations. It is used only by the
 corrected direct reference-posterior analysis in
-`outputs/analysis/full_vs_partial_references_v2/`; it does not alter estimator
+`outputs/analysis/reference_target_comparison/`; it does not alter estimator
 benchmarks or any partial-data reference artifact.
 
 The correction records duplicate-row preflight checks, old-full versus
