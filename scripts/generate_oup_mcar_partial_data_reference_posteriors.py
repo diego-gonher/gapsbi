@@ -6,6 +6,8 @@ from pathlib import Path
 
 from gapsbi.references import (
     DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
+    default_full_reference_path,
+    default_partial_reference_path,
     generate_oup_mcar_partial_data_reference_posteriors,
     save_partial_data_reference_posteriors_hdf5,
 )
@@ -14,7 +16,7 @@ from gapsbi.references import (
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--missing-fraction", type=float, required=True)
-    parser.add_argument("--full-reference", type=Path, default=Path("references/reference_posteriors_v1/oup_references.h5"))
+    parser.add_argument("--full-reference", type=Path, default=default_full_reference_path("oup"))
     parser.add_argument("--reference-mask-seed", type=int, default=987_654)
     parser.add_argument("--posterior-seed", type=int, default=23_456)
     parser.add_argument("--num-reference-samples", type=int, default=10_000)
@@ -33,9 +35,9 @@ def main() -> None:
         chunk_size=args.chunk_size, validation_grid_resolution=args.validation_grid_resolution,
         validation_observation_indices=(None if args.validation_observations is None else tuple(args.validation_observations)),
     )
-    output = args.output or (
-        Path("references") / args.reference_version
-        / f"oup_mcar_eps{int(round(args.missing_fraction * 100)):03d}_references.h5"
+    output = args.output or default_partial_reference_path(
+        "oup", "mcar", args.missing_fraction,
+        reference_version=args.reference_version,
     )
     theta_samples = reference_data.pop("theta_samples")
     save_partial_data_reference_posteriors_hdf5(

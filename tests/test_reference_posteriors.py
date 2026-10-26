@@ -13,6 +13,8 @@ from scipy.stats import norm, truncnorm
 from gapsbi.references import (
     PARTIAL_DATA_REFERENCE_SCHEMA_NAME,
     REFERENCE_SCHEMA_NAME,
+    default_full_reference_path,
+    default_partial_reference_path,
     compute_oup_grid_posterior,
     generate_glm_reference_posteriors,
     generate_glu_reference_posteriors,
@@ -69,6 +71,17 @@ def test_glm_mnar_constant_zero_completion_is_not_discarded() -> None:
     assert completions.shape == (2, 4)
     assert {tuple(row) for row in completions} == {(0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 1.0, 1.0)}
     assert np.all(np.isfinite(log_mask))
+
+
+def test_reference_path_helpers_preserve_versioned_artifact_names() -> None:
+    assert default_full_reference_path("glu") == Path("references/reference_posteriors_v1/glu_references.h5")
+    assert default_partial_reference_path("oup", "mnar", .25) == Path(
+        "references/partial_data_references_v1/oup_mnar_eps025_references.h5"
+    )
+    assert default_partial_reference_path("lotka_volterra", "mnar", .5) == Path(
+        "references/partial_data_references_v1/lotka_volterra_mnar_eps050_successful_references.h5"
+    )
+    assert default_full_reference_path("glm", root="references/full") == Path("references/full/glm_references.h5")
 
 
 def test_glm_mnar_mask_probability_matches_generator() -> None:

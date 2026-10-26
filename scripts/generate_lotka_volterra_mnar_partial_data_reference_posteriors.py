@@ -10,6 +10,8 @@ import numpy as np
 from gapsbi.masks import LotkaVolterraLogTotalMNARMask
 from gapsbi.references import (
     DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
+    default_full_reference_path,
+    default_partial_reference_path,
     find_lotka_volterra_map,
     importance_reweight_lotka_volterra_mnar,
     load_reference_posteriors_hdf5,
@@ -68,25 +70,28 @@ def completed_samples(directory: Path) -> np.ndarray:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--missing-fraction", type=float, required=True, choices=(.1, .25, .5))
+    parser.add_argument("--full-reference", type=Path, default=default_full_reference_path("lotka_volterra"))
+    parser.add_argument("--reference-version", default=DEFAULT_PARTIAL_DATA_REFERENCE_VERSION)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--work-dir", type=Path, default=Path("outputs/reference_generation/lv_mnar"))
-    parser.add_argument("--seed", type=int, default=77123)
+    parser.add_argument("--posterior-seed", "--seed", dest="posterior_seed", type=int, default=77123)
+    parser.add_argument("--reference-mask-seed", type=int, default=987654)
+    parser.add_argument("--num-reference-samples", type=int, default=10_000)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     sparse = args.missing_fraction == .5
-    observations, _, metadata, _ = load_reference_posteriors_hdf5(
-        "references/reference_posteriors_v1/lotka_volterra_references.h5"
-    )
+    observations, _, metadata, _ = load_reference_posteriors_hdf5(args.full_reference)
     sim = simulator(metadata)
     generator = LotkaVolterraLogTotalMNARMask(args.missing_fraction)
-    mask = generator.generate(observations["x_full"], observations["theta_true"], np.random.default_rng(987654))
+    mask = generator.generate(observations["x_full"], observations["theta_true"], np.random.default_rng(args.reference_mask_seed))
     x_obs = observations["x_full"] * mask
     tag = f"eps{round(100 * args.missing_fraction):03d}"
     work = args.work_dir / tag
-    artifact_name = (f"lotka_volterra_mnar_{tag}_successful_references.h5" if sparse
-                     else f"lotka_volterra_mnar_{tag}_references.h5")
-    output = Path("references") / DEFAULT_PARTIAL_DATA_REFERENCE_VERSION / artifact_name
+    output = args.output or default_partial_reference_path(
+        "lotka_volterra", "mnar", args.missing_fraction, reference_version=args.reference_version,
+    )
     successful: list[int] = []
     failed: list[dict] = []
     samples: list[np.ndarray] = []
@@ -101,7 +106,7 @@ def main() -> None:
             continue
         if prior.get("status") == "completed":
             final = completed_samples(directory)
-            if final.shape != (10_000, 4) or not np.all(np.isfinite(final)) or not np.all(final > 0):
+            if final.shape != (args.num_reference_samples, 4) or not np.all(np.isfinite(final)) or not np.all(final > 0):
                 raise ValueError(f"Persisted successful reference {index} is invalid.")
             successful.append(index); samples.append(final); diagnostics.append(prior["diagnostics"])
             continue
@@ -128,7 +133,7 @@ def main() -> None:
                     x_obs[index], simulator=sim, num_walkers=64, burn_in_steps=1500,
                     production_steps=6000, initial_scale=.3, mask=mask[index],
                     map_log_theta=map_z, map_log_prob=map_log_prob, screen_initialization=True,
-                    rng=np.random.default_rng(seed(args.seed, round(100 * args.missing_fraction), index, ensemble)),
+                    rng=np.random.default_rng(seed(args.posterior_seed, round(100 * args.missing_fraction), index, ensemble)),
                 )
                 chain = np.asarray(result["log_theta_chain"])
                 atomic_npz(chain_path, log_theta_chain=chain, log_posterior_chain=result["log_posterior_chain"])
@@ -147,14 +152,15 @@ def main() -> None:
             theta, importance = importance_reweight_lotka_volterra_mnar(
                 proposals, x_obs[index], mask[index], simulator=sim,
                 missing_fraction=args.missing_fraction, latent_completions=16,
-                rng=np.random.default_rng(seed(args.seed, 99, index)),
+                rng=np.random.default_rng(seed(args.posterior_seed, 99, index)),
             )
             weights = importance.pop("parameter_weights")
             importance_context.update(importance)
             atomic_npz(directory / "importance.npz", log_theta_proposals=proposals, parameter_weights=weights)
             selection = np.searchsorted(np.cumsum(weights), (
-                np.random.default_rng(seed(args.seed, 88, index)).random(10_000) + np.arange(10_000)
-            ) / 10_000)
+                np.random.default_rng(seed(args.posterior_seed, 88, index)).random(args.num_reference_samples)
+                + np.arange(args.num_reference_samples)
+            ) / args.num_reference_samples)
             final = theta[selection]
             min_mcmc_ess = min(float(np.min(summary["ess"])) for summary in summaries)
             if min_mcmc_ess < 1000 or importance["importance_ess"] < 1000 or not np.all(np.isfinite(final)) or not np.all(final > 0) or any(summary["ode_failures"] for summary in summaries):
@@ -184,7 +190,8 @@ def main() -> None:
     metadata_out = {"problem": "lotka_volterra", "missingness_mechanism": "mnar",
         "posterior_method": "screened_observed_data_emcee_parameter_level_importance",
         "posterior_conditioning": "theta_given_x_obs_mask", "mask": generator.metadata(),
-        "reference_mask_seed": 987654, "sampler_settings": {"ensembles": 2, "walkers": 64, "burn_in": 1500, "production": 6000, "latent_completions": 16},
+        "reference_mask_seed": args.reference_mask_seed, "posterior_seed": args.posterior_seed,
+        "full_reference_path": str(args.full_reference), "sampler_settings": {"ensembles": 2, "walkers": 64, "burn_in": 1500, "production": 6000, "latent_completions": 16},
         "chain_work_dir": str(work), "simulator": sim.metadata(), "theta_scaled": False,
         "x_scaled": False, "original_reference_indices": successful, "failed_reference_indices": [item["reference_index"] for item in failed], "sparse_reference_artifact": sparse}
     save_partial_data_reference_posteriors_hdf5(
@@ -194,7 +201,7 @@ def main() -> None:
             "importance_ess_fraction": np.asarray([item["importance"]["importance_ess_fraction"] for item in diagnostics]),
             "max_weight": np.asarray([item["importance"]["max_normalized_weight"] for item in diagnostics]),
             "zero_weight_fraction": np.asarray([item["importance"]["zero_weight_fraction"] for item in diagnostics])},
-        overwrite=args.overwrite,
+        reference_version=args.reference_version, overwrite=args.overwrite,
     )
     manifest = {"status": "completed", "mechanism": "mnar", "missing_fraction": args.missing_fraction,
                 "output": str(output), "successful_reference_indices": successful,

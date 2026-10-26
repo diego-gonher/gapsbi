@@ -5,6 +5,7 @@ from pathlib import Path
 
 from gapsbi.references import (
     DEFAULT_REFERENCE_VERSION,
+    default_full_reference_path,
     generate_glm_reference_posteriors,
     generate_glu_reference_posteriors,
     generate_lotka_volterra_reference_posteriors,
@@ -159,10 +160,8 @@ def main() -> None:
 
     output_path = args.output
     if output_path is None:
-        output_path = (
-            Path("references")
-            / args.reference_version
-            / f"{args.problem}_references.h5"
+        output_path = default_full_reference_path(
+            args.problem, reference_version=args.reference_version
         )
     theta_samples = reference_data.pop("theta_samples")
     save_reference_posteriors_hdf5(

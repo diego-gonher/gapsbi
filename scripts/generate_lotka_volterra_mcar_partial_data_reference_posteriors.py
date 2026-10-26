@@ -20,6 +20,8 @@ import numpy as np
 from gapsbi.masks import LotkaVolterraTimeBlockMCARMask
 from gapsbi.references import (
     DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
+    default_full_reference_path,
+    default_partial_reference_path,
     find_lotka_volterra_map,
     load_partial_data_reference_posteriors_hdf5,
     load_reference_posteriors_hdf5,
@@ -228,7 +230,8 @@ def _run_observation(args: argparse.Namespace, simulator: LotkaVolterraSimulator
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--missing-fraction", type=float, required=True, choices=(.10, .25, .50))
-    p.add_argument("--full-reference", type=Path, default=Path("references/reference_posteriors_v1/lotka_volterra_references.h5"))
+    p.add_argument("--full-reference", type=Path, default=default_full_reference_path("lotka_volterra"))
+    p.add_argument("--reference-version", default=DEFAULT_PARTIAL_DATA_REFERENCE_VERSION)
     p.add_argument("--output", type=Path)
     p.add_argument("--work-dir", type=Path, default=Path("outputs/reference_generation/lv_mcar"))
     p.add_argument("--reference-mask-seed", type=int, default=987654); p.add_argument("--posterior-seed", type=int, default=901245)
@@ -243,7 +246,7 @@ def main() -> None:
     x_obs = observations["x_full"] * mask
     tag = f"eps{round(100 * args.missing_fraction):03d}"
     work = args.work_dir / tag; work.mkdir(parents=True, exist_ok=True)
-    output = args.output or Path("references") / DEFAULT_PARTIAL_DATA_REFERENCE_VERSION / f"lotka_volterra_mcar_{tag}_references.h5"
+    output = args.output or default_partial_reference_path("lotka_volterra", "mcar", args.missing_fraction, reference_version=args.reference_version)
     selected = [] ; statuses = []
     for index in range(10):
         print(f"LV/MCAR {tag}, reference {index + 1}/10", flush=True)
@@ -267,7 +270,7 @@ def main() -> None:
                          "theta_true_sha256": _hash(observations["theta_true"]), "chain_work_dir": str(work),
                          "sampler_settings": {"ensembles": 2, "walkers": args.num_walkers, "burn_in_steps": args.burn_in_steps, "production_steps": args.production_steps, "screen_log_density_drop": 16.68842079082944}}
     save_partial_data_reference_posteriors_hdf5(output, observations=artifact_observations, theta_samples=theta_samples,
-        metadata=artifact_metadata, diagnostics=diagnostics, overwrite=args.overwrite)
+        metadata=artifact_metadata, diagnostics=diagnostics, reference_version=args.reference_version, overwrite=args.overwrite)
     loaded_obs, loaded_samples, _, _ = load_partial_data_reference_posteriors_hdf5(output)
     if not (np.array_equal(loaded_obs["x_full"], observations["x_full"]) and np.array_equal(loaded_obs["mask"], mask)
             and np.array_equal(loaded_obs["x_obs"], x_obs) and np.array_equal(loaded_samples, theta_samples)):

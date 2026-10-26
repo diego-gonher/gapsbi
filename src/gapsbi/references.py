@@ -22,6 +22,87 @@ DEFAULT_REFERENCE_VERSION = "reference_posteriors_v1"
 PARTIAL_DATA_REFERENCE_SCHEMA_NAME = "gapsbi_partial_data_reference_posteriors"
 PARTIAL_DATA_REFERENCE_SCHEMA_VERSION = 1
 DEFAULT_PARTIAL_DATA_REFERENCE_VERSION = "partial_data_references_v1"
+REFERENCE_PROBLEMS = ("glu", "oup", "glm", "lotka_volterra")
+
+
+def default_full_reference_path(
+    problem: str,
+    *,
+    root: str | os.PathLike[str] | None = None,
+    reference_version: str = DEFAULT_REFERENCE_VERSION,
+) -> Path:
+    """Return the current physical path for one full-data reference artifact.
+
+    The versioned default remains deliberate provenance. Callers may supply a
+    root for a future public-facing reference alias without changing artifact
+    schemas or existing configuration paths.
+    """
+    if problem not in REFERENCE_PROBLEMS:
+        raise ValueError(f"Unknown reference problem: {problem!r}.")
+    base = Path(root) if root is not None else Path("references") / reference_version
+    return base / f"{problem}_references.h5"
+
+
+def default_partial_reference_path(
+    problem: str,
+    mechanism: str,
+    missing_fraction: float,
+    *,
+    root: str | os.PathLike[str] | None = None,
+    reference_version: str = DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
+) -> Path:
+    """Return the current physical path for a partial-data reference artifact.
+
+    LV/MNAR at 50% is intentionally sparse and retains its validated
+    ``successful_references`` filename.
+    """
+    if problem not in REFERENCE_PROBLEMS:
+        raise ValueError(f"Unknown reference problem: {problem!r}.")
+    if mechanism not in {"mcar", "mnar"}:
+        raise ValueError(f"Unknown partial-reference mechanism: {mechanism!r}.")
+    if not 0.0 <= missing_fraction <= 1.0:
+        raise ValueError("missing_fraction must be in [0, 1].")
+    tag = f"eps{round(100 * missing_fraction):03d}"
+    suffix = (
+        "_successful_references.h5"
+        if (problem, mechanism, missing_fraction) == ("lotka_volterra", "mnar", 0.50)
+        else "_references.h5"
+    )
+    base = Path(root) if root is not None else Path("references") / reference_version
+    return base / f"{problem}_{mechanism}_{tag}{suffix}"
+
+
+def partial_reference_observations(
+    full_observations: dict[str, np.ndarray],
+    mask: np.ndarray,
+    *,
+    reference_indices: np.ndarray | None = None,
+) -> dict[str, np.ndarray]:
+    """Build the shared partial-reference observation contract.
+
+    This preserves the existing ``x_obs = x_full * mask`` convention and is a
+    guard against a generator writing observations that do not correspond to
+    its immutable full-data source.
+    """
+    if "theta_true" not in full_observations or "x_full" not in full_observations:
+        raise ValueError("full_observations must contain theta_true and x_full.")
+    theta_true = np.asarray(full_observations["theta_true"])
+    x_full = np.asarray(full_observations["x_full"])
+    mask_array = np.asarray(mask)
+    if theta_true.ndim != 2 or x_full.ndim != 2 or mask_array.shape != x_full.shape:
+        raise ValueError("theta_true, x_full, and mask have incompatible shapes.")
+    observations = {
+        "theta_true": theta_true,
+        "x_full": x_full,
+        "x_obs": x_full * mask_array,
+        "mask": mask_array,
+    }
+    if reference_indices is not None:
+        indices = np.asarray(reference_indices, dtype=np.int64)
+        if indices.shape != (theta_true.shape[0],):
+            raise ValueError("reference_indices must have one entry per observation.")
+        observations["reference_indices"] = indices
+    return observations
 
 
 def generate_glu_mcar_partial_data_reference_posteriors(
@@ -2932,7 +3013,7 @@ def load_reference_posteriors_hdf5(
     return observations, theta_samples, metadata, diagnostics
 
 
-def save_glu_mcar_partial_data_reference_posteriors_hdf5(
+def save_partial_data_reference_posteriors_hdf5(
     path: str | os.PathLike[str],
     *,
     observations: dict[str, np.ndarray],
@@ -2942,8 +3023,8 @@ def save_glu_mcar_partial_data_reference_posteriors_hdf5(
     reference_version: str = DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
     overwrite: bool = False,
 ) -> None:
-    """Save the GLU/MCAR partial-data reference artifact contract."""
-    validate_glu_mcar_partial_data_reference_arrays(observations, theta_samples)
+    """Save a partial-data reference artifact using the shared v1 contract."""
+    validate_partial_reference_arrays(observations, theta_samples)
     output_path = Path(path)
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"{output_path} already exists.")
@@ -2980,10 +3061,10 @@ def save_glu_mcar_partial_data_reference_posteriors_hdf5(
                 diagnostics_group.create_dataset(key, data=value)
 
 
-def load_glu_mcar_partial_data_reference_posteriors_hdf5(
+def load_partial_data_reference_posteriors_hdf5(
     path: str | os.PathLike[str],
 ) -> tuple[dict[str, np.ndarray], np.ndarray, dict[str, Any], dict[str, np.ndarray]]:
-    """Load and validate a GLU/MCAR partial-data reference artifact."""
+    """Load and validate a partial-data reference artifact using schema v1."""
     with h5py.File(path, "r") as h5:
         metadata = {key: _decode_metadata_attr(value) for key, value in h5.attrs.items()}
         if metadata.get("schema_name") != PARTIAL_DATA_REFERENCE_SCHEMA_NAME:
@@ -2998,15 +3079,14 @@ def load_glu_mcar_partial_data_reference_posteriors_hdf5(
         diagnostics = {
             key: h5["diagnostics"][key][...] for key in h5["diagnostics"].keys()
         }
-    validate_glu_mcar_partial_data_reference_arrays(observations, theta_samples)
+    validate_partial_reference_arrays(observations, theta_samples)
     return observations, theta_samples, metadata, diagnostics
 
 
-# These generic aliases deliberately retain the established HDF5 schema while
-# keeping the GLU-named public helpers backward compatible.  The validator only
-# relies on the common theta/x/mask contract, so GLM can use it without a new
-# artifact format.
-def save_partial_data_reference_posteriors_hdf5(
+# Compatibility aliases for the original GLU/MCAR-specific public names. The
+# underlying schema has always been task-agnostic, so new callers should use
+# the generic functions above.
+def save_glu_mcar_partial_data_reference_posteriors_hdf5(
     path: str | os.PathLike[str],
     *,
     observations: dict[str, np.ndarray],
@@ -3016,18 +3096,18 @@ def save_partial_data_reference_posteriors_hdf5(
     reference_version: str = DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
     overwrite: bool = False,
 ) -> None:
-    """Save a partial-data reference artifact using the shared v1 contract."""
-    save_glu_mcar_partial_data_reference_posteriors_hdf5(
+    """Backward-compatible alias for :func:`save_partial_data_reference_posteriors_hdf5`."""
+    save_partial_data_reference_posteriors_hdf5(
         path, observations=observations, theta_samples=theta_samples, metadata=metadata,
         diagnostics=diagnostics, reference_version=reference_version, overwrite=overwrite,
     )
 
 
-def load_partial_data_reference_posteriors_hdf5(
+def load_glu_mcar_partial_data_reference_posteriors_hdf5(
     path: str | os.PathLike[str],
 ) -> tuple[dict[str, np.ndarray], np.ndarray, dict[str, Any], dict[str, np.ndarray]]:
-    """Load a partial-data reference artifact using the shared v1 contract."""
-    return load_glu_mcar_partial_data_reference_posteriors_hdf5(path)
+    """Backward-compatible alias for :func:`load_partial_data_reference_posteriors_hdf5`."""
+    return load_partial_data_reference_posteriors_hdf5(path)
 
 
 def plot_reference_posterior_marginals(
@@ -3659,11 +3739,11 @@ def validate_reference_arrays(
             raise ValueError(f"{name} must contain only finite values.")
 
 
-def validate_glu_mcar_partial_data_reference_arrays(
+def validate_partial_reference_arrays(
     observations: dict[str, np.ndarray],
     theta_samples: np.ndarray,
 ) -> None:
-    """Validate the deliberately narrow GLU/MCAR partial-data contract."""
+    """Validate the task-agnostic partial-data reference contract."""
     required = {"theta_true", "x_full", "x_obs", "mask"}
     if not required.issubset(observations):
         raise ValueError(f"observations must contain {sorted(required)}.")
@@ -3677,6 +3757,14 @@ def validate_glu_mcar_partial_data_reference_arrays(
         raise ValueError("mask must be binary with 1=observed and 0=missing.")
     if not np.array_equal(x_obs, x_full * mask):
         raise ValueError("x_obs must equal x_full * mask.")
+
+
+def validate_glu_mcar_partial_data_reference_arrays(
+    observations: dict[str, np.ndarray],
+    theta_samples: np.ndarray,
+) -> None:
+    """Backward-compatible alias for :func:`validate_partial_reference_arrays`."""
+    validate_partial_reference_arrays(observations, theta_samples)
 
 
 def _metadata_attr_value(value: Any) -> Any:

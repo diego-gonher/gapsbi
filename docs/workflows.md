@@ -92,7 +92,9 @@ The current physical paths such as `reference_posteriors_v1`,
 `partial_data_references_v1`, and `full_vs_partial_references_v2` are immutable
 provenance locations. They remain unchanged in this pass.
 
-Subsequent cleanup passes should expose these unversioned public-facing names:
+The path helpers in `gapsbi.references` centralize versioned defaults and allow
+an explicit root for public aliases.  Public interfaces should use these
+unversioned names when aliases are released:
 
 | Concept | Intended public name |
 | --- | --- |
@@ -104,20 +106,16 @@ Subsequent cleanup passes should expose these unversioned public-facing names:
 | Research diagnostics | `outputs/diagnostics/` |
 
 Artifact release identifiers, HDF5 schema versions, seeds, hashes, and sampler
-settings must remain in provenance metadata. A future path resolver must update
-YAML `reference_path` fields, generator defaults, evaluator defaults, result
-readers, and plotting adapters together; existing ignored artifacts must not be
+settings remain in provenance metadata. Existing ignored artifacts must not be
 renamed in place.
 
 ## Reproduction boundary
 
 The repository intentionally regenerates HDF5 reference artifacts from code
-rather than distributing posterior samples. The current reference READMEs
-describe the HDF5 contracts and full-reference procedures. Follow-up work must
-add a complete MCAR/MNAR partial-reference command matrix, tracked lightweight
-campaign manifests, and a pinned environment for exact regeneration. Until
-then, use the stored artifact metadata and committed source together when
-reproducing a validated campaign.
+rather than distributing posterior samples. The partial-reference README
+contains the complete eight-command MCAR/MNAR regeneration matrix. Use stored
+artifact metadata and committed source together when reproducing a validated
+campaign.
 
 ## Historical and experimental components
 

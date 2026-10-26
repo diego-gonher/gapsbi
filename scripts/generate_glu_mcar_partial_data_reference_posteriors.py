@@ -5,8 +5,9 @@ from pathlib import Path
 
 from gapsbi.references import (
     DEFAULT_PARTIAL_DATA_REFERENCE_VERSION,
+    default_partial_reference_path,
     generate_glu_mcar_partial_data_reference_posteriors,
-    save_glu_mcar_partial_data_reference_posteriors_hdf5,
+    save_partial_data_reference_posteriors_hdf5,
 )
 
 
@@ -41,13 +42,12 @@ def main() -> None:
             simulator_scale=args.simulator_scale,
         )
     )
-    output_path = args.output or (
-        Path("references")
-        / args.reference_version
-        / f"glu_mcar_eps{int(round(args.missing_fraction * 100)):03d}_references.h5"
+    output_path = args.output or default_partial_reference_path(
+        "glu", "mcar", args.missing_fraction,
+        reference_version=args.reference_version,
     )
     theta_samples = reference_data.pop("theta_samples")
-    save_glu_mcar_partial_data_reference_posteriors_hdf5(
+    save_partial_data_reference_posteriors_hdf5(
         output_path,
         observations=observations,
         theta_samples=theta_samples,

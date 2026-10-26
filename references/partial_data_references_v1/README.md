@@ -43,9 +43,30 @@ Original indices 2 and 7 have preserved failure diagnostics because the exact
 importance sampler produced zero feasible weight. They are not replaced with
 full-data references or fabricated draws.
 
-For example, regenerate GLU/MCAR at 25% with:
+## Regeneration commands
+
+All generators write to the established versioned artifact location by default,
+which preserves compatibility with existing artifacts and configurations.  Use
+`--output` to write a separately named public-facing copy; do not move or
+rename released artifacts.  The common arguments are `--missing-fraction`,
+`--full-reference`, `--reference-mask-seed`, `--posterior-seed`,
+`--num-reference-samples`, `--reference-version`, and `--output` where they
+apply.  Task-specific sampler controls intentionally remain task-specific.
+
+Run each command once for `0.10`, `0.25`, and `0.50` (LV generators enforce
+those fractions explicitly):
 
 ```bash
-PYTHONPATH=src python scripts/generate_glu_mcar_partial_data_reference_posteriors.py \
-  --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_glu_mcar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_glu_mnar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_glm_mcar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_glm_mnar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_oup_mcar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_oup_mnar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_lotka_volterra_mcar_partial_data_reference_posteriors.py --missing-fraction 0.25
+PYTHONPATH=src python scripts/generate_lotka_volterra_mnar_partial_data_reference_posteriors.py --missing-fraction 0.25
 ```
+
+The MNAR GLU and GLM commands read canonical dataset metadata to reproduce the
+validated mask mechanism.  Pass `--dataset` only when reproducing from a
+different canonical dataset location.

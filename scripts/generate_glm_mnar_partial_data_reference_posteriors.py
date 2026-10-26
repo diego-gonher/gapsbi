@@ -17,6 +17,9 @@ from gapsbi.references import (
     glm_log_likelihood,
     glm_observed_laplace_covariance,
     load_reference_posteriors_hdf5,
+    default_full_reference_path,
+    default_partial_reference_path,
+    partial_reference_observations,
     run_glm_observed_independence_mh,
     save_partial_data_reference_posteriors_hdf5,
 )
@@ -43,19 +46,22 @@ def log_evidence_is(x: np.ndarray, log_mask: float, simulator: GLMSimulator, see
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--missing-fraction', type=float, required=True)
-    parser.add_argument('--proposals', type=int, default=100_000)
-    parser.add_argument('--samples', type=int, default=10_000)
+    parser.add_argument('--full-reference', type=Path, default=default_full_reference_path('glm'))
+    parser.add_argument('--dataset', type=Path, default=None,
+                        help='Canonical MNAR dataset used only to recover mask metadata.')
+    parser.add_argument('--num-proposals', '--proposals', dest='num_proposals', type=int, default=100_000)
+    parser.add_argument('--num-reference-samples', '--samples', dest='num_reference_samples', type=int, default=10_000)
     parser.add_argument('--reference-mask-seed', type=int, default=987_654)
-    parser.add_argument('--seed', type=int, default=45_678)
+    parser.add_argument('--posterior-seed', '--seed', dest='posterior_seed', type=int, default=45_678)
+    parser.add_argument('--reference-version', default=DEFAULT_PARTIAL_DATA_REFERENCE_VERSION)
+    parser.add_argument('--output', type=Path)
     parser.add_argument('--overwrite', action='store_true')
     args = parser.parse_args()
     eps_tag = f'{round(args.missing_fraction * 100):03d}'
-    dataset = Path(f'data/canonical_v1/glm/mnar/glm_raw_mnar_self_censoring_mean_normalized_identity_eps{eps_tag}_seed123.h5')
+    dataset = args.dataset or Path(f'data/canonical_v1/glm/mnar/glm_raw_mnar_self_censoring_mean_normalized_identity_eps{eps_tag}_seed123.h5')
     with h5py.File(dataset) as handle:
         mask_meta = json.loads(handle.attrs['mask'])
-    full_obs, full_theta, full_meta, _ = load_reference_posteriors_hdf5('references/reference_posteriors_v1/glm_references.h5')
-    with h5py.File('references/reference_posteriors_v1/glm_references.h5') as handle:
-        full_samples = np.asarray(handle['reference_posterior/theta_samples'])
+    full_obs, full_samples, full_meta, _ = load_reference_posteriors_hdf5(args.full_reference)
     sim_meta = full_meta['simulator']
     simulator = GLMSimulator(dim=int(sim_meta['dim']), duration=int(sim_meta['duration']), stimulus_seed=int(sim_meta['stimulus_seed']), summary='raw')
     generator = MeanNormalizedSelfCensoringMNARMask(**{key: mask_meta[key] for key in ('missing_fraction', 'eps', 'score_transform')})
@@ -63,8 +69,8 @@ def main() -> None:
     theta_true = np.asarray(full_obs['theta_true'], dtype=float)
     mask = generator.generate(x_full, theta_true, np.random.default_rng(args.reference_mask_seed))
     x_obs = x_full * mask
-    rng = np.random.default_rng(args.seed)
-    theta_samples = np.empty((10, args.samples, simulator.theta_dim))
+    rng = np.random.default_rng(args.posterior_seed)
+    theta_samples = np.empty((10, args.num_reference_samples, simulator.theta_dim))
     component_weights = np.full((10, 2), np.nan)
     component_log_evidence = np.full((10, 2, 2), np.nan)
     component_ess = np.full((10, 2, 2), np.nan)
@@ -76,13 +82,13 @@ def main() -> None:
         component_count[i] = len(completions); completions_store[i, :len(completions)] = completions
         for c, (completion, lp) in enumerate(zip(completions, log_mask)):
             for run in range(2):
-                component_log_evidence[i, c, run], component_ess[i, c, run] = log_evidence_is(completion, float(lp), simulator, int(rng.integers(2**32)), args.proposals)
+                component_log_evidence[i, c, run], component_ess[i, c, run] = log_evidence_is(completion, float(lp), simulator, int(rng.integers(2**32)), args.num_proposals)
         log_z = np.mean(component_log_evidence[i, :len(completions)], axis=1)
         weights = np.exp(log_z - logsumexp(log_z)); component_weights[i, :len(completions)] = weights
-        labels = rng.choice(len(completions), size=args.samples, p=weights)
+        labels = rng.choice(len(completions), size=args.num_reference_samples, p=weights)
         dominant = int(np.argmax(weights))
         # Full-reference samples are exactly p(theta|completion) for the dominant completion.
-        if full_samples.shape[1] != args.samples:
+        if full_samples.shape[1] != args.num_reference_samples:
             raise ValueError('Dominant full-reference sample count must equal requested sample count.')
         theta_samples[i] = full_samples[i].copy()
         for c in range(len(completions)):
@@ -94,17 +100,19 @@ def main() -> None:
             selected_alt[i] += n
         if not np.allclose(completions[dominant], x_full[i]):
             raise RuntimeError('Dominant completion does not match full reference; refusing sample reuse.')
-    observations = {'theta_true': theta_true, 'x_full': x_full, 'x_obs': x_obs, 'mask': mask}
+    observations = partial_reference_observations(full_obs, mask)
     metadata = {
         'problem': 'glm', 'mechanism': 'mnar', 'missing_fraction': args.missing_fraction,
         'mask': mask_meta, 'reference_mask_seed': args.reference_mask_seed,
-        'posterior_method': 'exact_binary_completion_mixture', 'dominant_component_samples': 'reference_posteriors_v1/glm_references.h5',
-        'evidence_method': 'two_independent_laplace_proposal_importance_runs', 'proposals_per_run': args.proposals,
-        'posterior_seed': args.seed, 'simulator': sim_meta, 'theta_scaled': False, 'x_scaled': False,
+        'posterior_method': 'exact_binary_completion_mixture', 'dominant_component_samples': str(args.full_reference),
+        'evidence_method': 'two_independent_laplace_proposal_importance_runs', 'proposals_per_run': args.num_proposals,
+        'posterior_seed': args.posterior_seed, 'simulator': sim_meta, 'theta_scaled': False, 'x_scaled': False,
     }
     diagnostics = {'component_count': component_count, 'component_completions': completions_store, 'component_weights': component_weights, 'component_log_evidence': component_log_evidence, 'component_importance_ess': component_ess, 'selected_alternative_samples': selected_alt}
-    output = Path(f'references/{DEFAULT_PARTIAL_DATA_REFERENCE_VERSION}/glm_mnar_eps{eps_tag}_references.h5')
-    save_partial_data_reference_posteriors_hdf5(output, observations=observations, theta_samples=theta_samples, metadata=metadata, diagnostics=diagnostics, reference_version=DEFAULT_PARTIAL_DATA_REFERENCE_VERSION, overwrite=args.overwrite)
+    output = args.output or default_partial_reference_path(
+        'glm', 'mnar', args.missing_fraction, reference_version=args.reference_version,
+    )
+    save_partial_data_reference_posteriors_hdf5(output, observations=observations, theta_samples=theta_samples, metadata=metadata, diagnostics=diagnostics, reference_version=args.reference_version, overwrite=args.overwrite)
     print(output)
 
 
