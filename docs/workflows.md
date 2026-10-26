@@ -168,3 +168,25 @@ commit, simulator/mask metadata, and contains empty train/validation groups
 plus 10,000 independent test pairs. Regenerate a single task with `--task glu`;
 use `--output-root` for a non-default location. These inputs are reserved for
 experimental standard L-C2ST only and do not alter release metrics.
+
+### Experimental standard L-C2ST runner
+
+`scripts/run_standard_lc2st.py` is the reusable standard-L-C2ST entry point.
+It uses `sbi.diagnostics.lc2st.LC2ST` with `z_score=False`, applies a
+calibration-only standardizer to the common `[x_obs, mask]` context, retains
+the raw permutation local-MSE null statistics, and reports the corrected
+upper-tail p-value `(1 + count(null >= observed)) / (B + 1)`. It is not
+L-C2ST-NF and is not a release metric. For example, after generating the
+separate calibration HDF5 file, run:
+
+```bash
+conda run -n gapsbi_env env PYTHONPATH=src python scripts/run_standard_lc2st.py \
+  --checkpoint outputs_low_sim_budget/npe_mask_augmentation/glu/mcar/glu_mcar_eps010/seed_101/model_checkpoint.pt \
+  --calibration data/experimental/lc2st_calibration_v1/glu/mcar/glu_mcar_eps010_seed31301.h5 \
+  --partial-reference references/partial_data_references_v1/glu_mcar_eps010_references.h5 \
+  --output outputs/diagnostics/standard_lc2st/glu_mcar_eps010_mask_augmentation_low_seed101.json
+```
+
+The default uses 199 permutations. The runner refuses exact overlap between
+calibration and reference rows, preserves sparse `reference_indices`, and
+records checkpoint/input paths and all classifier and posterior-sampling seeds.
