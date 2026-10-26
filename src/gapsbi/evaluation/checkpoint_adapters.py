@@ -18,12 +18,28 @@ from gapsbi.datasets import apply_train_val_sample_limits
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
 from gapsbi.io import load_gapsbi_hdf5
 from gapsbi.methods.imputation import zero_impute
+from gapsbi.methods.learned_constant_imputation import LearnedConstantImputer
+from gapsbi.methods.masked_transformer_embedding import (
+    MaskedTransformerEmbeddingConfig,
+    make_masked_transformer_embedding,
+    make_zero_imputed_mask_condition,
+)
 from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_input
+from gapsbi.methods.rise import RISEImputerMLP
 from gapsbi.methods.sbi_npe import FixedSplitNPE_C
 from gapsbi.preprocessing.scalers import make_scaled_theta_prior, transform_x_obs_with_fitted_scaler
+from gapsbi.utils.seeding import set_all_seeds
 
 
-SUPPORTED_METHODS = {"npe_zero_imputation", "npe_mask_augmentation"}
+# Validated missing-data methods only. The full-data comparator and retained
+# historical baselines deliberately remain outside this partial-data adapter.
+SUPPORTED_METHODS = {
+    "npe_zero_imputation",
+    "npe_mask_augmentation",
+    "npe_learned_constant_imputation",
+    "npe_probabilistic_learned_imputation",
+    "npe_masked_transformer_embedding",
+}
 SUPPORTED_PROBLEMS = {"oup", "glm", "glu", "lotka_volterra"}
 
 
@@ -77,6 +93,7 @@ class NPECheckpointAdapter:
     checkpoint: dict[str, Any]
     posterior: Any
     device: str
+    imputer: torch.nn.Module | None = None
 
     @property
     def method(self) -> str:
@@ -105,9 +122,22 @@ class NPECheckpointAdapter:
         mask_tensor = torch.as_tensor(m, dtype=torch.float32)
         if self.method == "npe_zero_imputation":
             conditioned = zero_impute(x_scaled, mask_tensor)
-        else:
+        elif self.method == "npe_mask_augmentation":
             conditioned = make_zero_imputed_mask_augmented_input(x_scaled, mask_tensor)
-        if conditioned.shape[1] != int(self.checkpoint["x_dim"]):
+        elif self.method == "npe_learned_constant_imputation":
+            assert self.imputer is not None
+            with torch.no_grad():
+                conditioned = self.imputer(x_scaled.to(self.device), mask_tensor.to(self.device))
+        elif self.method == "npe_probabilistic_learned_imputation":
+            assert self.imputer is not None
+            with torch.no_grad():
+                conditioned = self.imputer(x_scaled.to(self.device), mask_tensor.to(self.device)).completed_x
+        else:
+            conditioned = make_zero_imputed_mask_condition(x_scaled, mask_tensor)
+        expected_condition_dim = int(self.checkpoint["x_dim"])
+        if self.method == "npe_masked_transformer_embedding":
+            expected_condition_dim *= 2
+        if conditioned.shape[1] != expected_condition_dim:
             raise ValueError("Prepared conditioning dimension does not match checkpoint.")
         return conditioned.to(self.device)
 
@@ -128,6 +158,10 @@ class NPECheckpointAdapter:
             max_sampling_time = sampling.get("max_sampling_time", 30.0)
         if max_sampling_time is not None:
             max_sampling_time = float(max_sampling_time)
+        # RISE completion samples a latent variable. Seeding before preparing
+        # the condition makes the whole adapter call reproducible, not merely
+        # the subsequent posterior sampler.
+        set_all_seeds(int(seed))
         samples_scaled = sample_posteriors_once(
             posterior=self.posterior,
             x_eval=self.prepare_input(x_obs, mask),
@@ -141,6 +175,55 @@ class NPECheckpointAdapter:
         return self.checkpoint["theta_scaler"].inverse_transform(
             scaled.reshape(-1, theta_dim)
         ).reshape(scaled.shape)
+
+
+def _rebuild_imputer(checkpoint: dict[str, Any]) -> torch.nn.Module | None:
+    """Recreate method-specific imputers from checkpoint configuration/state."""
+    method = str(checkpoint["method"])
+    x_dim = int(checkpoint["x_dim"])
+    if method == "npe_learned_constant_imputation":
+        imputer: torch.nn.Module = LearnedConstantImputer(x_dim=x_dim)
+    elif method == "npe_probabilistic_learned_imputation":
+        config = checkpoint.get("rise_config")
+        if not isinstance(config, dict):
+            raise ValueError("Probabilistic-imputation checkpoint lacks rise_config.")
+        imputer = RISEImputerMLP(
+            input_dim=x_dim,
+            hidden_dim=int(config["hidden_dim"]),
+            num_layers=int(config["num_layers"]),
+            dropout=float(config["dropout"]),
+            latent_dim=int(config["latent_dim"]),
+            use_mask_head=bool(config["use_mask_head"]),
+            min_std=float(config["min_std"]),
+        )
+    else:
+        return None
+    if "imputer_state_dict" not in checkpoint:
+        raise ValueError(f"{method} checkpoint lacks imputer_state_dict.")
+    imputer.load_state_dict(checkpoint["imputer_state_dict"])
+    imputer.eval()
+    return imputer
+
+
+def _density_builder(checkpoint: dict[str, Any]):
+    """Rebuild the exact density-estimator factory for the saved method."""
+    density_name = str(checkpoint["density_estimator_name"])
+    if checkpoint["method"] != "npe_masked_transformer_embedding":
+        return posterior_nn(density_name)
+    raw_embedding = checkpoint.get("embedding_config")
+    if not isinstance(raw_embedding, dict):
+        raise ValueError("Masked-transformer checkpoint lacks embedding_config.")
+    embedding = make_masked_transformer_embedding(MaskedTransformerEmbeddingConfig(**raw_embedding))
+    npe_config = checkpoint.get("config", {}).get("npe", {})
+    return posterior_nn(
+        model=density_name,
+        embedding_net=embedding,
+        z_score_x=str(npe_config.get("z_score_x", "none")),
+        z_score_theta=str(npe_config.get("z_score_theta", "independent")),
+        hidden_features=int(npe_config.get("hidden_features", 50)),
+        num_transforms=int(npe_config.get("num_transforms", 5)),
+        num_bins=int(npe_config.get("num_bins", 10)),
+    )
 
 
 def load_npe_checkpoint_adapter(
@@ -167,14 +250,20 @@ def load_npe_checkpoint_adapter(
         raise ValueError("Checkpoint adapters currently require CPU execution.")
     prior = _scaled_prior(checkpoint, Path(repository_root))
     theta_dim, x_dim = int(checkpoint["theta_dim"]), int(checkpoint["x_dim"])
+    density_condition_dim = (
+        2 * x_dim if method == "npe_masked_transformer_embedding" else x_dim
+    )
     density_name = str(checkpoint["density_estimator_name"])
-    builder = posterior_nn(density_name)
+    builder = _density_builder(checkpoint)
     density_estimator = builder(
         torch.zeros((2, theta_dim), dtype=torch.float32),
-        torch.zeros((2, x_dim), dtype=torch.float32),
+        torch.zeros((2, density_condition_dim), dtype=torch.float32),
     )
     density_estimator.load_state_dict(checkpoint["density_estimator_state_dict"])
     density_estimator.eval()
-    inference = FixedSplitNPE_C(prior=prior, density_estimator=density_name, device=runtime_device)
+    inference = FixedSplitNPE_C(prior=prior, density_estimator=builder, device=runtime_device)
     posterior = inference.build_posterior(density_estimator)
-    return NPECheckpointAdapter(path, checkpoint, posterior, runtime_device)
+    imputer = _rebuild_imputer(checkpoint)
+    if imputer is not None:
+        imputer = imputer.to(runtime_device)
+    return NPECheckpointAdapter(path, checkpoint, posterior, runtime_device, imputer)

@@ -11,7 +11,9 @@ import torch
 from gapsbi.evaluation.checkpoint_adapters import load_npe_checkpoint_adapter
 from gapsbi.methods.imputation import zero_impute
 from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_input
+from gapsbi.methods.masked_transformer_embedding import make_zero_imputed_mask_condition
 from gapsbi.preprocessing.scalers import transform_x_obs_with_fitted_scaler
+from gapsbi.utils.seeding import set_all_seeds
 
 
 ROOT = Path(__file__).parents[1]
@@ -37,7 +39,16 @@ def require_artifacts(method: str, task: str) -> None:
         pytest.skip("ignored checkpoint/dataset artifacts are unavailable")
 
 
-@pytest.mark.parametrize("method", ["npe_zero_imputation", "npe_mask_augmentation"])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "npe_zero_imputation",
+        "npe_mask_augmentation",
+        "npe_learned_constant_imputation",
+        "npe_probabilistic_learned_imputation",
+        "npe_masked_transformer_embedding",
+    ],
+)
 @pytest.mark.parametrize("task", tuple(TASK_PATHS))
 def test_adapter_reconstructs_and_samples_reproducibly(method: str, task: str) -> None:
     require_artifacts(method, task)
@@ -45,7 +56,9 @@ def test_adapter_reconstructs_and_samples_reproducibly(method: str, task: str) -
         x_obs, mask = h5["test/x_obs"][:2], h5["test/mask"][:2]
     adapter = load_npe_checkpoint_adapter(checkpoint_path(method, task), repository_root=ROOT)
     prepared = adapter.prepare_input(x_obs, mask)
-    expected_dim = x_obs.shape[1] * (2 if method == "npe_mask_augmentation" else 1)
+    expected_dim = x_obs.shape[1] * (
+        2 if method in {"npe_mask_augmentation", "npe_masked_transformer_embedding"} else 1
+    )
     assert prepared.shape == (2, expected_dim)
     x_scaled = transform_x_obs_with_fitted_scaler(
         x_obs=x_obs,
@@ -53,15 +66,30 @@ def test_adapter_reconstructs_and_samples_reproducibly(method: str, task: str) -
         x_scaler=adapter.checkpoint["x_scaler"],
         transform=adapter.checkpoint["x_scaling_metadata"]["transform"],
     )
-    expected = (
-        zero_impute(x_scaled, torch.as_tensor(mask, dtype=torch.float32))
-        if method == "npe_zero_imputation"
-        else make_zero_imputed_mask_augmented_input(x_scaled, torch.as_tensor(mask, dtype=torch.float32))
-    )
-    np.testing.assert_array_equal(prepared.cpu().numpy(), expected.numpy())
+    mask_tensor = torch.as_tensor(mask, dtype=torch.float32)
+    if method == "npe_zero_imputation":
+        expected = zero_impute(x_scaled, mask_tensor)
+    elif method == "npe_mask_augmentation":
+        expected = make_zero_imputed_mask_augmented_input(x_scaled, mask_tensor)
+    elif method == "npe_learned_constant_imputation":
+        assert adapter.imputer is not None
+        expected = adapter.imputer(x_scaled, mask_tensor)
+    elif method == "npe_probabilistic_learned_imputation":
+        assert adapter.imputer is not None
+        set_all_seeds(44)
+        expected = adapter.imputer(x_scaled, mask_tensor).completed_x
+        set_all_seeds(44)
+        prepared = adapter.prepare_input(x_obs, mask)
+        np.testing.assert_array_equal(prepared.cpu().numpy(), expected.detach().numpy())
+        prepared = None
+    else:
+        expected = make_zero_imputed_mask_condition(x_scaled, mask_tensor)
+    if prepared is not None:
+        np.testing.assert_array_equal(prepared.cpu().numpy(), expected.detach().numpy())
     first = adapter.sample(x_obs, mask, num_posterior_samples=2, seed=71_001)
     second = adapter.sample(x_obs, mask, num_posterior_samples=2, seed=71_001)
     assert first.shape == (2, 2, adapter.checkpoint["theta_dim"])
+    assert np.all(np.isfinite(first))
     np.testing.assert_array_equal(first, second)
 
 
@@ -76,6 +104,12 @@ def test_adapter_reconstructs_and_samples_reproducibly(method: str, task: str) -
         ("npe_mask_augmentation", "glm", "mid", 303),
         ("npe_mask_augmentation", "glu", "high", 404),
         ("npe_mask_augmentation", "lotka_volterra", "mid", 505),
+        ("npe_learned_constant_imputation", "oup", "mid", 202),
+        ("npe_learned_constant_imputation", "glm", "high", 303),
+        ("npe_probabilistic_learned_imputation", "glu", "mid", 404),
+        ("npe_probabilistic_learned_imputation", "lotka_volterra", "high", 505),
+        ("npe_masked_transformer_embedding", "oup", "high", 202),
+        ("npe_masked_transformer_embedding", "glm", "mid", 303),
     ],
 )
 def test_adapter_loads_other_saved_budgets_and_estimator_seeds(
