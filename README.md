@@ -1,10 +1,15 @@
 # GapSBI: Gaps in Data in Simulation Based Inference
 
-GapSBI is a benchmark and experimentation framework for simulation based
-inference with missing observations. It includes synthetic benchmark tasks,
-MCAR, MAR, and MNAR missingness mechanisms, reproducible HDF5 datasets, NPE
-baselines, posterior diagnostics, result aggregation, and publication plotting
-scripts.
+GapSBI is a benchmark for simulation-based inference with missing
+observations. The validated release benchmark covers OUP, GLM, GLU, and
+Lotka--Volterra under MCAR and MNAR missingness at 10%, 25%, and 50% nominal
+missingness. Its primary posterior-fidelity evaluation uses partial-data
+references conditioned on the realized observation and mask.
+
+The repository also retains MAR configurations, exploratory simulators, and
+diagnostic work. Those components are useful research history, but are outside
+the validated release benchmark. See [the workflow guide](docs/workflows.md)
+for the authoritative workflow and scope boundaries.
 
 ## Installation
 
@@ -19,7 +24,7 @@ pip install -e .
 GapSBI requires Python `>=3.11`. The main dependencies are declared in
 `pyproject.toml` and `environment.yml`.
 
-## Benchmark Scope
+## Validated Benchmark Scope
 
 Core benchmark tasks:
 
@@ -35,10 +40,9 @@ reported benchmark:
 * Spatial SIR
 * Hodgkin Huxley
 
-Missingness mechanisms:
+Missingness mechanisms in the release benchmark:
 
 * MCAR: missing completely at random.
-* MAR: coordinate or time dependent missingness.
 * MNAR: value dependent self censoring.
 
 Missing fractions:
@@ -47,20 +51,29 @@ Missing fractions:
 * 25 percent
 * 50 percent
 
-Core benchmark methods:
+Validated method inventory:
 
-* Full data NPE
-* Zero imputation NPE
-* Learned constant imputation NPE
-* Zero imputation plus mask augmentation NPE
-* Probabilistic learned imputation NPE
-* Masked transformer embedding NPE
+* Full-data NPE, retained as the full-information comparator.
+* Zero-imputation NPE.
+* Learned-constant-imputation NPE.
+* Zero-imputation plus mask-augmentation NPE.
+* Probabilistic learned-imputation NPE.
+* Masked-transformer-embedding NPE.
 
-Legacy or extra methods are kept for comparison and experimentation, but are not
-part of the reported core benchmark:
+The following implementations and configuration families are retained, but are
+not asserted to be part of the validated partial-reference result inventory:
 
 * Mean imputation NPE
 * Deterministic input dependent learned imputation NPE
+
+They are not excluded merely because they are older or non-default: the current
+validated output trees and partial-reference analyses contain the six methods
+listed above. Releasing either retained method as a benchmark method requires a
+complete MCAR/MNAR partial-reference evaluation campaign.
+
+MAR remains implemented and reproducible as a limitation/extension, not a
+release benchmark mechanism. It has no validated partial-reference benchmark
+claim in this release.
 
 Simulation budgets:
 
@@ -70,11 +83,37 @@ Simulation budgets:
 | `mid_sim_budget` | 9,000 | 1,000 | 1,000 |
 | `high_sim_budget` | 90,000 | 10,000 | 1,000 |
 
-All reported experiments use five training seeds:
+Validated missing-data campaigns use five training seeds:
 
 ```text
 101, 202, 303, 404, 505
 ```
+
+## Canonical Workflow
+
+The authoritative current entry points are listed below. Existing paths retain
+their versioned artifact names for provenance; this pass does not rename or move
+scientific artifacts. The intended unversioned public names and migration
+dependencies are documented in [docs/workflows.md](docs/workflows.md).
+
+1. Generate datasets with `scripts/generate_benchmark_v1_datasets.sh`.
+2. Generate full-data references with `scripts/generate_reference_posteriors.py`.
+3. Generate partial-data references with the task/mechanism-specific
+   `scripts/generate_*_partial_data_reference_posteriors.py` entry points.
+4. Train with the appropriate `experiments/*/train.py` and committed YAML
+   configuration.
+5. Evaluate saved estimator draws against partial references with
+   `scripts/evaluate_partial_references.py --partial-only`.
+6. Aggregate partial-reference comparisons with
+   `scripts/analyze_partial_reference_comparison.py` and create benchmark plots
+   with `scripts/plot_benchmark_summary.py --reference-mode partial`.
+7. Treat `scripts/analyze_full_vs_partial_references.py` plus
+   `scripts/analyze_glm_mnar_independent_full_vs_partial.py` as a separate
+   reference-target diagnostic; the latter is authoritative for GLM/MNAR.
+
+Training-time reference metrics compare masked estimator inputs with
+full-data references. They are preserved as historical full-information
+diagnostics, not the final partial-data benchmark target.
 
 ## Dataset Contract
 
@@ -104,7 +143,7 @@ Convention:
 * `x_obs = x_full * mask`.
 * Metadata is stored as HDF5 attributes.
 
-Generate the canonical benchmark datasets with:
+Generate the currently canonical dataset collection with:
 
 ```bash
 bash scripts/generate_benchmark_v1_datasets.sh
@@ -132,7 +171,7 @@ Useful dataset generation options include:
 * `--output`
 * `--overwrite`
 
-## Running Experiments
+## Training
 
 Each experiment family has YAML configs under `experiments/`. The examples below
 run one OUP configuration. Use the run queue scripts in each experiment folder
@@ -191,20 +230,20 @@ Typical per seed outputs include:
 
 ## Evaluation and Analysis
 
-The benchmark uses two metric families.
+The final missing-data benchmark compares saved estimator posterior draws with
+partial-data references for the same realized `(x_obs, mask)` pair. Its three
+primary metrics are C2ST, posterior mean shift, and covariance-trace ratio.
+The established aggregation convention is mean C2ST and median mean-shift and
+trace-ratio across finite reference observations, followed by summaries across
+training seeds.
 
-Reference comparison metrics compare inferred posteriors with complete data
-reference posteriors:
+Historical training-time full-reference metrics remain in existing summaries;
+they must not be substituted for the partial-data result.
 
-* C2ST
-* posterior mean shift
-* covariance trace ratio
+The repository also uses calibration diagnostics:
 
-Calibration metrics use held out simulations with known parameters:
-
-* TARP empirical coverage curves
-* TARP MAE and IAE
-* SBC rank diagnostics
+* TARP empirical coverage curves, MAE, and IAE.
+* SBC rank diagnostics.
 
 Compile seed level summaries:
 
@@ -224,6 +263,11 @@ Aggregate results across seeds:
 PYTHONPATH=src python scripts/aggregate_experiment_results.py
 ```
 
+For the final partial-reference workflow, use the command sequence in
+[docs/workflows.md](docs/workflows.md). It validates estimator/reference
+provenance before computing metrics and preserves the sparse LV/MNAR reference
+mapping.
+
 The main analysis files are written under:
 
 ```text
@@ -233,16 +277,24 @@ outputs/analysis/aggregates/
 
 ## Plotting
 
-Generate scalar benchmark metric figures:
+Generate historical full-reference scalar figures:
 
 ```bash
 PYTHONPATH=src python scripts/plot_benchmark_summary.py --all
 ```
 
-Generate combined MCAR and MNAR benchmark figures:
+Generate the release-facing partial-reference figures:
 
 ```bash
-PYTHONPATH=src python scripts/plot_benchmark_summary.py --combined-mcar-mnar --all
+PYTHONPATH=src python scripts/plot_benchmark_summary.py \
+  --reference-mode partial --all
+```
+
+Generate combined MCAR and MNAR release figures with partial-data references:
+
+```bash
+PYTHONPATH=src python scripts/plot_benchmark_summary.py \
+  --reference-mode partial --combined-mcar-mnar --all
 ```
 
 Generate TARP coverage curves:
@@ -272,7 +324,21 @@ Figures are written under:
 outputs/analysis/figures/
 ```
 
-## Diagnostics
+## Diagnostics and Limitations
+
+The full-versus-partial-reference study is diagnostic only. For GLM/MNAR it
+must use the independent full-reference replica and corrected analysis, because
+the partial artifact can intentionally reuse canonical full-reference draws.
+
+At LV/MNAR 50%, only original reference indices `[0, 1, 3, 4, 5, 6, 8, 9]`
+have feasible partial references. Aggregates report the available eight
+observations; this is not interchangeable with a ten-observation comparison.
+Estimator sampling failures are represented as non-finite draws and invalid
+reference-metric rows; reporting retains finite counts and failure provenance
+rather than imputing scores. MAR and L-C2ST are outside the primary benchmark.
+
+See [docs/workflows.md](docs/workflows.md) for diagnostic and historical
+boundaries.
 
 Plot example observations:
 
@@ -350,6 +416,7 @@ evaluation helpers, experiment setup, aggregation scripts, and plotting scripts.
 ```text
 experiments/                    Experiment configs and training entry points
 references/                     Reference posterior documentation
+docs/                           Canonical workflow and release-scope documentation
 scripts/                        Dataset, analysis, diagnostic, and plotting scripts
 src/gapsbi/                     Package source
 tests/                          Unit and integration tests

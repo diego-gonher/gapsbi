@@ -1,5 +1,11 @@
 # Partial-data reference artifacts
 
+These artifacts provide the final benchmark target described in the
+[canonical workflow guide](../../docs/workflows.md):
+`p(theta | x_obs, mask)` for the persisted partial observation and mask.
+The directory name is retained as immutable provenance; it is not the intended
+long-term public-facing workflow name.
+
 This directory holds immutable, locally generated partial-data reference
 posteriors conditioned on the realized observation and mask. Full-data
 artifacts under `reference_posteriors_v1/` are unchanged.

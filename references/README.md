@@ -1,5 +1,10 @@
 # Reference Posterior Artifacts
 
+This document is the task-specific reference-generation companion to the
+[canonical workflow guide](../docs/workflows.md). The versioned directories
+below are current immutable provenance locations, not the intended long-term
+public-facing names. No artifact paths are renamed in this documentation pass.
+
 Reference posterior files are separate benchmark artifacts, not training datasets.
 They store unscaled fixed observations and high-quality posterior samples for
 reference-fidelity metrics such as C2ST, posterior mean shift, and covariance
