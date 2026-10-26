@@ -149,3 +149,22 @@ Keep, but do not treat as release entry points:
 * LV/MNAR sampler pilots, validation scripts, and targeted follow-ups.
 * L-C2ST feasibility and sensitivity pilots.
 * Extra simulators outside OUP, GLM, GLU, and Lotka--Volterra.
+
+### Experimental L-C2ST calibration data
+
+Standard L-C2ST validation uses separate, test-only prior-predictive pairs;
+these are not canonical benchmark datasets, estimator training data, or
+reference observations. Generate the four 10,000-pair MCAR-10% artifacts with:
+
+```bash
+conda run -n gapsbi_env env PYTHONPATH=src python \
+  scripts/generate_lc2st_calibration_datasets.py
+```
+
+The command writes ignored experimental HDF5 files under
+`data/experimental/lc2st_calibration_v1/`, with fixed task-specific seeds
+(`31101`, `31201`, `31301`, `31401`). Each file records its role, source
+commit, simulator/mask metadata, and contains empty train/validation groups
+plus 10,000 independent test pairs. Regenerate a single task with `--task glu`;
+use `--output-root` for a non-default location. These inputs are reserved for
+experimental standard L-C2ST only and do not alter release metrics.
