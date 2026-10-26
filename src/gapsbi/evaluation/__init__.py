@@ -1,4 +1,8 @@
 from gapsbi.evaluation.posterior_sampling import sample_posteriors_once
+from gapsbi.evaluation.checkpoint_adapters import (
+    NPECheckpointAdapter,
+    load_npe_checkpoint_adapter,
+)
 from gapsbi.evaluation.lc2st import (
     derangement,
     farthest_reference_indices,
@@ -27,7 +31,9 @@ __all__ = [
     "derangement",
     "farthest_reference_indices",
     "mask_augmented_context",
+    "NPECheckpointAdapter",
     "posterior_mean_shift",
+    "load_npe_checkpoint_adapter",
     "sample_posteriors_once",
     "select_one_finite_draw_per_observation",
 ]
