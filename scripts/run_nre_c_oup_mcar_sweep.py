@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Sequential, resumable launcher for the OUP NRE-C MCAR-10% campaign."""
+"""Sequential, resumable launcher for tracked OUP NRE-C 10% campaigns."""
 from __future__ import annotations
 
 import argparse
@@ -33,8 +33,8 @@ OMIT_FROM_TRAINING_COMPARISON = {"output_dir", "evaluation", "seeds"}
 
 def load_matrix(path: Path = MATRIX) -> dict[str, Any]:
     matrix = yaml.safe_load(path.read_text())
-    if (matrix["problem"], matrix["mechanism"], float(matrix["missing_fraction"])) != ("oup", "mcar", .1):
-        raise ValueError("This launcher is restricted to OUP/MCAR/10%.")
+    if matrix.get("problem") != "oup" or matrix.get("mechanism") not in {"mcar", "mnar"} or float(matrix.get("missing_fraction", -1)) != .1:
+        raise ValueError("This launcher supports only tracked OUP MCAR/MNAR 10% matrices.")
     return matrix
 
 
@@ -55,7 +55,16 @@ def job_id(job: dict[str, Any]) -> str:
 
 
 def run_dir(job: dict[str, Any], matrix: dict[str, Any]) -> Path:
-    return ROOT / f"outputs_{job['budget']}_sim_budget" / job["method"] / "oup/mcar/oup_mcar_eps010" / f"seed_{job['seed']}"
+    mechanism = matrix["mechanism"]
+    return ROOT / f"outputs_{job['budget']}_sim_budget" / job["method"] / f"oup/{mechanism}/oup_{mechanism}_eps010" / f"seed_{job['seed']}"
+
+
+def _deep_update(target: dict[str, Any], update: dict[str, Any]) -> None:
+    for key, value in update.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
 
 
 def materialize_config(job: dict[str, Any], matrix: dict[str, Any]) -> dict[str, Any]:
@@ -65,15 +74,22 @@ def materialize_config(job: dict[str, Any], matrix: dict[str, Any]) -> dict[str,
     budget = job["budget_config"]
     config.update({
         "dataset_path": matrix["dataset_path"],
-        "output_dir": f"outputs_{job['budget']}_sim_budget/{method}/oup/mcar/oup_mcar_eps010",
+        "output_dir": f"outputs_{job['budget']}_sim_budget/{method}/oup/{matrix['mechanism']}/oup_{matrix['mechanism']}_eps010",
         "seeds": [job["seed"]],
         "max_train_samples": budget["max_train_samples"],
         "max_val_samples": budget["max_val_samples"],
     })
+    # Preserve byte-for-byte training provenance for completed MCAR checkpoints.
+    # MNAR needs explicit metadata so standalone evaluators can reject a wrong
+    # partial-reference target.
+    if matrix["mechanism"] != "mcar":
+        config["mechanism"] = matrix["mechanism"]
+        config["missing_fraction"] = float(matrix["missing_fraction"])
     if "nre" in config:
         config["nre"]["training_batch_size"] = int(budget["training_batch_size"])
     if "rise" in config:
         config["rise"]["batch_size"] = int(budget["training_batch_size"])
+    _deep_update(config, matrix.get("method_overrides", {}).get(method, {}))
     config["evaluation"]["partial_reference_path"] = matrix["partial_reference_path"]
     config["evaluation"]["reference_indices"] = [int(i) for i in matrix["reference_indices"]]
     return config
@@ -115,6 +131,8 @@ def current_status(job: dict[str, Any], matrix: dict[str, Any], prior: dict[str,
     validation = validate_nre_c_campaign_run(
         folder, expected_method=job["method"], expected_seed=job["seed"],
         reference_path=ROOT / matrix["partial_reference_path"],
+        expected_mechanism=matrix["mechanism"],
+        expected_missing_fraction=float(matrix["missing_fraction"]),
     )
     checkpoint_path = folder / "model_checkpoint.pt"
     if checkpoint_path.exists():
@@ -246,7 +264,12 @@ def _run_job(job: dict[str, Any], matrix: dict[str, Any], records: dict[str, Any
                 return
         log.write("EVALUATE: " + " ".join(evaluate_command) + "\n")
         code = subprocess.run(evaluate_command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=False).returncode
-    result = validate_nre_c_campaign_run(folder, expected_method=job["method"], expected_seed=job["seed"], reference_path=ROOT / matrix["partial_reference_path"])
+    result = validate_nre_c_campaign_run(
+        folder, expected_method=job["method"], expected_seed=job["seed"],
+        reference_path=ROOT / matrix["partial_reference_path"],
+        expected_mechanism=matrix["mechanism"],
+        expected_missing_fraction=float(matrix["missing_fraction"]),
+    )
     if code:
         records[key] = {"status": "failed", "reason": f"evaluation exited with code {code}; {result['reason']}", "evaluation_exit_code": code, "updated_at": time.time()}
     elif result["status"] == "complete":
@@ -264,6 +287,11 @@ def main() -> int:
     parser.add_argument("--matrix", type=Path, default=MATRIX)
     args = parser.parse_args()
     matrix = load_matrix(args.matrix)
+    global CAMPAIGN
+    if args.matrix != MATRIX:
+        CAMPAIGN = ROOT / matrix.get(
+            "campaign_dir", f"logs/nre_c_oup_{matrix['mechanism']}_{int(matrix['missing_fraction'] * 100)}pct"
+        )
     records_path = CAMPAIGN / "run_state.json"
     records = _read_json(records_path, {})
     if args.progress or args.failures:

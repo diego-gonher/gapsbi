@@ -11,6 +11,7 @@ import numpy as np
 import yaml
 
 from gapsbi.evaluation.reference_metrics import aggregate_final_reference_metrics, compute_reference_metrics
+from gapsbi.evaluation.nre_c_campaign import validate_oup_partial_reference_metadata
 from gapsbi.methods.sbi_nre import (
     evaluate_nre_a_oup_grid,
     load_nre_c_mask_augmentation_checkpoint,
@@ -38,10 +39,10 @@ def evaluate_checkpoint(checkpoint_path, config, *, reference_ids=None, reposito
     checkpoint, estimator = load_nre_c_mask_augmentation_checkpoint(checkpoint_path, repository_root=repository_root)
     evaluation = config["evaluation"]
     observations, reference_samples, reference_metadata, _ = load_partial_data_reference_posteriors_hdf5(evaluation["partial_reference_path"])
-    if reference_metadata.get("problem") != "oup" or reference_metadata.get("missingness_mechanism") != "mcar":
-        raise ValueError("Expected OUP MCAR partial-data references.")
-    if float(reference_metadata.get("mask", {}).get("missing_fraction", np.nan)) != 0.1:
-        raise ValueError("Partial reference artifact is not MCAR at 10% missingness.")
+    validate_oup_partial_reference_metadata(
+        reference_metadata, mechanism=config.get("mechanism", "mcar"),
+        missing_fraction=float(config.get("missing_fraction", 0.1)),
+    )
     positions, canonical_ids = select_reference_positions(observations, evaluation.get("reference_indices") if reference_ids is None else reference_ids)
     conditions = prepare_mask_augmented_nre_input(
         x_obs=observations["x_obs"][positions], mask=observations["mask"][positions], x_scaler=checkpoint["x_scaler"],
@@ -73,7 +74,8 @@ def evaluate_checkpoint(checkpoint_path, config, *, reference_ids=None, reposito
               "augmentation": "zero_imputed_scaled_x_plus_mask", "reference_artifact": str(evaluation["partial_reference_path"]),
               "reference_ids": canonical_ids.tolist(), "reference_metadata": reference_metadata,
               "grid_log_ratio_convention": "log_p_x_given_theta_minus_log_p_x", "grid_prior": "uniform_raw_oup_box",
-              "selected_grid_resolution": selected_resolution, "inference_runtime_sec": time.perf_counter() - started,
+              "grid_batch_size": int(evaluation["grid_batch_size"]), "selected_grid_resolution": selected_resolution,
+              "inference_runtime_sec": time.perf_counter() - started,
               "grid_convergence": diagnostics, "reference_metrics": rows, "reference_metric_aggregate": aggregate_final_reference_metrics(rows)}
     output_dir = Path(checkpoint_path).parent
     with h5py.File(output_dir / "reference_posterior_samples.h5", "w") as h5:

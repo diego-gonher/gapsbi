@@ -1,0 +1,28 @@
+# Canonical matrix for the future sequential OUP NRE-C MNAR-10% campaign.
+# The dataset and RISE override match the tracked OUP NPE MNAR configurations.
+problem: oup
+mechanism: mnar
+missing_fraction: 0.10
+dataset_path: data/canonical_v1/oup/mnar/oup_mnar_self_censoring_mean_normalized_identity_eps010_seed123.h5
+partial_reference_path: references/partial_data_references_v1/oup_mnar_eps010_references.h5
+campaign_dir: logs/nre_c_oup_mnar_10pct
+seeds: [101, 202, 303, 404, 505]
+reference_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+budgets:
+  low: {max_train_samples: 900, max_val_samples: 100, training_batch_size: 100}
+  mid: {max_train_samples: 9000, max_val_samples: 1000, training_batch_size: 256}
+  high: {max_train_samples: null, max_val_samples: null, training_batch_size: 256}
+methods:
+  - nre_c_zero_imputation
+  - nre_c_mask_augmentation
+  - nre_c_learned_constant_imputation
+  - nre_c_probabilistic_learned_imputation
+  - nre_c_masked_transformer_embedding
+method_overrides:
+  nre_c_probabilistic_learned_imputation:
+    rise:
+      # Matches OUP NPE MNAR: learn the informative mask head and use the
+      # MNAR RISE reconstruction weight rather than the MCAR setting.
+      lambda_np: 1.0
+      lambda_mask: 1.0
+      use_mask_head: true

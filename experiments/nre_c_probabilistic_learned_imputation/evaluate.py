@@ -4,12 +4,13 @@ import argparse,json,time
 from pathlib import Path
 import h5py,numpy as np,torch,yaml
 from gapsbi.evaluation.reference_metrics import compute_reference_metrics,aggregate_final_reference_metrics
+from gapsbi.evaluation.nre_c_campaign import validate_oup_partial_reference_metadata
 from gapsbi.methods.sbi_nre import load_nre_c_probabilistic_learned_imputation_checkpoint,complete_rise_with_seed,evaluate_nre_a_oup_grid,sample_nre_a_oup_grid
 from gapsbi.preprocessing.scalers import transform_x_obs_with_fitted_scaler
 from gapsbi.references import load_partial_data_reference_posteriors_hdf5
 def evaluate_checkpoint(path,c,*,reference_ids=None,repository_root=Path('.')):
  start=time.perf_counter();ck,est,imp=load_nre_c_probabilistic_learned_imputation_checkpoint(path,repository_root=repository_root);ec=c['evaluation'];o,ref,meta,_=load_partial_data_reference_posteriors_hdf5(ec['partial_reference_path']);ids=np.asarray(o.get('reference_indices',np.arange(len(o['x_obs']))));wanted=np.asarray(ec.get('reference_indices',ids) if reference_ids is None else reference_ids);pos=np.array([np.flatnonzero(ids==i)[0] for i in wanted],int)
- if meta.get('problem')!='oup' or meta.get('missingness_mechanism')!='mcar' or float(meta['mask']['missing_fraction'])!=.1:raise ValueError('Expected OUP MCAR-10% partial references.')
+ validate_oup_partial_reference_metadata(meta,mechanism=c.get('mechanism','mcar'),missing_fraction=float(c.get('missing_fraction',.1)))
  scaled=transform_x_obs_with_fitted_scaler(o['x_obs'][pos],o['mask'][pos],ck['x_scaler'],ck['x_scaling_metadata']['transform']); grids=[];diag=[]
  for i,x,m in zip(wanted,scaled,o['mask'][pos],strict=True):
   with torch.no_grad():condition=complete_rise_with_seed(imp,x[None],torch.tensor(m[None],dtype=torch.float32),int(ck['seed'])+50000+int(i)).numpy()[0]

@@ -14,9 +14,28 @@ EXPECTED_IDS = set(range(10))
 REQUIRED_METRICS = {"c2st_accuracy", "posterior_mean_shift", "covariance_trace_ratio"}
 
 
+def validate_oup_partial_reference_metadata(
+    metadata: dict[str, Any], *, mechanism: str, missing_fraction: float,
+) -> None:
+    """Reject a reference artifact whose target does not match an OUP campaign."""
+    expected = {"problem": "oup", "missingness_mechanism": mechanism}
+    for key, value in expected.items():
+        if metadata.get(key) != value:
+            raise ValueError(
+                f"Partial reference metadata {key}={metadata.get(key)!r}, expected {value!r}."
+            )
+    actual_fraction = float(metadata.get("mask", {}).get("missing_fraction", np.nan))
+    if actual_fraction != float(missing_fraction):
+        raise ValueError(
+            "Partial reference artifact has missing fraction "
+            f"{actual_fraction!r}, expected {float(missing_fraction)!r}."
+        )
+
+
 def validate_nre_c_campaign_run(
     run_dir: str | Path, *, expected_method: str | None = None,
     expected_seed: int | None = None, reference_path: str | Path | None = None,
+    expected_mechanism: str | None = None, expected_missing_fraction: float | None = None,
 ) -> dict[str, Any]:
     """Classify one run as complete, incomplete, or failed without mutation."""
     run = Path(run_dir)
@@ -36,6 +55,23 @@ def validate_nre_c_campaign_run(
         return _status("failed", "checkpoint/evaluation provenance mismatch")
     if result.get("posterior_target") != "theta_given_x_obs_mask":
         return _status("failed", "wrong posterior target")
+    if reference_path is not None:
+        try:
+            expected_reference = Path(reference_path).resolve()
+            recorded_reference = Path(str(result.get("reference_artifact", ""))).resolve()
+        except (OSError, TypeError) as error:
+            return _status("failed", f"invalid reference provenance: {error}")
+        if recorded_reference != expected_reference:
+            return _status("failed", "evaluation reference artifact does not match the campaign")
+    if expected_mechanism is not None:
+        try:
+            validate_oup_partial_reference_metadata(
+                result.get("reference_metadata", {}),
+                mechanism=expected_mechanism,
+                missing_fraction=float(expected_missing_fraction),
+            )
+        except (TypeError, ValueError) as error:
+            return _status("failed", f"reference provenance mismatch: {error}")
     ids = {int(value) for value in result.get("reference_ids", [])}
     if ids != EXPECTED_IDS:
         return _status("incomplete", f"expected IDs 0-9, found {sorted(ids)}")

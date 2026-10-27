@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import yaml
 from gapsbi.evaluation.reference_metrics import aggregate_final_reference_metrics, compute_reference_metrics
+from gapsbi.evaluation.nre_c_campaign import validate_oup_partial_reference_metadata
 from gapsbi.methods.sbi_nre import evaluate_nre_a_oup_grid, load_nre_c_learned_constant_imputation_checkpoint, sample_nre_a_oup_grid
 from gapsbi.preprocessing.scalers import transform_x_obs_with_fitted_scaler
 from gapsbi.references import load_partial_data_reference_posteriors_hdf5
@@ -23,7 +24,7 @@ def _positions(observations, requested):
 def evaluate_checkpoint(path, config, *, reference_ids=None, repository_root=Path(".")):
     started=time.perf_counter(); checkpoint, estimator, imputer=load_nre_c_learned_constant_imputation_checkpoint(path, repository_root=repository_root)
     evaluation=config["evaluation"]; obs, reference_samples, metadata, _=load_partial_data_reference_posteriors_hdf5(evaluation["partial_reference_path"])
-    if metadata.get("problem") != "oup" or metadata.get("missingness_mechanism") != "mcar" or float(metadata.get("mask",{}).get("missing_fraction",np.nan)) != .1: raise ValueError("Expected OUP MCAR-10% partial-data references.")
+    validate_oup_partial_reference_metadata(metadata, mechanism=config.get("mechanism", "mcar"), missing_fraction=float(config.get("missing_fraction", .1)))
     positions, ids=_positions(obs, evaluation.get("reference_indices") if reference_ids is None else reference_ids)
     scaled=transform_x_obs_with_fitted_scaler(obs["x_obs"][positions],obs["mask"][positions],checkpoint["x_scaler"],checkpoint["x_scaling_metadata"]["transform"])
     with torch.no_grad(): conditions=imputer(scaled,torch.as_tensor(obs["mask"][positions],dtype=torch.float32)).numpy()

@@ -29,6 +29,21 @@ def test_campaign_matrix_and_materialized_budget_contract():
         assert config["seeds"] == [job["seed"]]
 
 
+def test_mnar_matrix_materializes_isolated_paths_and_rise_override():
+    matrix = sweep.load_matrix(Path("experiments/nre_c_oup_mnar_sweep.yaml"))
+    configurations = sweep.jobs(matrix)
+    assert len(configurations) == 75
+    job = next(job for job in configurations if job["method"] == "nre_c_probabilistic_learned_imputation" and job["budget"] == "low")
+    config = sweep.materialize_config(job, matrix)
+    assert config["mechanism"] == "mnar"
+    assert config["missing_fraction"] == 0.1
+    assert config["output_dir"].endswith("/oup/mnar/oup_mnar_eps010")
+    assert config["evaluation"]["partial_reference_path"] == matrix["partial_reference_path"]
+    assert config["evaluation"]["reference_indices"] == list(range(10))
+    assert config["rise"]["lambda_np"] == 1.0
+    assert config["rise"]["use_mask_head"] is True
+
+
 def test_matching_smoke_checkpoint_is_reused_and_evaluated(monkeypatch, tmp_path):
     matrix = sweep.load_matrix()
     job = next(job for job in sweep.jobs(matrix) if job["method"] == "nre_c_zero_imputation" and job["budget"] == "low" and job["seed"] == 101)

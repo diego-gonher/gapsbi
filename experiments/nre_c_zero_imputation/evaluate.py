@@ -14,6 +14,7 @@ from gapsbi.evaluation.reference_metrics import (
     aggregate_final_reference_metrics,
     compute_reference_metrics,
 )
+from gapsbi.evaluation.nre_c_campaign import validate_oup_partial_reference_metadata
 from gapsbi.methods.sbi_nre import (
     evaluate_nre_a_oup_grid,
     load_nre_c_zero_imputation_checkpoint,
@@ -45,12 +46,10 @@ def evaluate_checkpoint(checkpoint_path, config, *, reference_ids=None, reposito
     observations, reference_samples, reference_metadata, _ = load_partial_data_reference_posteriors_hdf5(
         eval_config["partial_reference_path"]
     )
-    expected = {"problem": "oup", "missingness_mechanism": "mcar"}
-    for key, value in expected.items():
-        if reference_metadata.get(key) != value:
-            raise ValueError(f"Partial reference metadata {key}={reference_metadata.get(key)!r}, expected {value!r}.")
-    if float(reference_metadata.get("mask", {}).get("missing_fraction", np.nan)) != 0.1:
-        raise ValueError("Partial reference artifact is not MCAR at 10% missingness.")
+    validate_oup_partial_reference_metadata(
+        reference_metadata, mechanism=config.get("mechanism", "mcar"),
+        missing_fraction=float(config.get("missing_fraction", 0.1)),
+    )
     configured_ids = eval_config.get("reference_indices") if reference_ids is None else reference_ids
     positions, canonical_ids = select_reference_positions(observations, configured_ids)
     x = prepare_zero_imputed_nre_input(
@@ -101,7 +100,8 @@ def evaluate_checkpoint(checkpoint_path, config, *, reference_ids=None, reposito
         "mask_in_classifier_input": False, "reference_artifact": str(eval_config["partial_reference_path"]),
         "reference_ids": canonical_ids.tolist(), "reference_metadata": reference_metadata,
         "grid_log_ratio_convention": "log_p_x_given_theta_minus_log_p_x",
-        "grid_prior": "uniform_raw_oup_box", "selected_grid_resolution": selected_resolution,
+        "grid_prior": "uniform_raw_oup_box", "grid_batch_size": int(eval_config["grid_batch_size"]),
+        "selected_grid_resolution": selected_resolution,
         "inference_runtime_sec": time.perf_counter() - started, "grid_convergence": diagnostics,
         "reference_metrics": rows,
         "reference_metric_aggregate": aggregate_final_reference_metrics(rows),
