@@ -18,7 +18,7 @@ from plot_benchmark_summary import configure_matplotlib, style_axis
 
 
 METRIC_ORDER = ("c2st", "mean_shift", "covariance_trace_ratio")
-METRIC_LABELS = {"c2st": "C2ST\naccuracy", "mean_shift": "Posterior mean\nshift", "covariance_trace_ratio": "Covariance trace\nratio"}
+METRIC_LABELS = {"c2st": "C2ST\naccuracy", "mean_shift": "Posterior\nmean shift", "covariance_trace_ratio": "Covariance\ntrace ratio"}
 METHOD_ORDER = ("full_data", "zero_imputation", "mask_augmentation", "learned_constant_imputation", "probabilistic_learned_imputation", "masked_transformer_embedding")
 METHOD_LABELS = {"full_data":"Full-Data Baseline\n(full-data refs)", "zero_imputation":"Zero", "mask_augmentation":"Zero +\nMask", "learned_constant_imputation":"Learned\nConstant", "probabilistic_learned_imputation":"Probabilistic", "masked_transformer_embedding":"Masked\nTransformer"}
 METHOD_NAMES = {"full_data":("npe_full_data","nre_c_full_data"), "zero_imputation":("npe_zero_imputation","nre_c_zero_imputation"), "mask_augmentation":("npe_mask_augmentation","nre_c_mask_augmentation"), "learned_constant_imputation":("npe_learned_constant_imputation","nre_c_learned_constant_imputation"), "probabilistic_learned_imputation":("npe_probabilistic_learned_imputation","nre_c_probabilistic_learned_imputation"), "masked_transformer_embedding":("npe_masked_transformer_embedding","nre_c_masked_transformer_embedding")}
