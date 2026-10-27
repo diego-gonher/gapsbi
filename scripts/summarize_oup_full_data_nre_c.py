@@ -15,7 +15,7 @@ def main():
   for seed in SEEDS:
    d=json.load(open(Path(f'outputs_{budget}_sim_budget/nre_c_full_data/oup_full_data/seed_{seed}/reference_evaluation.json')))
    t=json.load(open(Path(f'outputs_{budget}_sim_budget/nre_c_full_data/oup_full_data/seed_{seed}/training_summary.json')))
-   nre.append({'seed':seed,**d['reference_metric_aggregate'],'training_runtime_sec':t['training_runtime_sec']})
+   nre.append({'seed':seed,**d['reference_metric_aggregate'],'training_runtime_sec':t['training_runtime_sec'],'reference_inference_runtime_sec':d.get('inference_runtime_sec')})
   npe=json.load(open(Path(f'outputs_{budget}_sim_budget/npe_full_data/oup_full_data/all_results.json')))
   for method,items in (('nre_c',nre),('npe',[{'seed':x['seed'],'c2st_accuracy':float(np.mean(x['reference_c2st_accuracy'])),'posterior_mean_shift':float(np.median(x['reference_posterior_mean_shift'])),'covariance_trace_ratio':float(np.median(x['reference_covariance_trace_ratio'])),'training_runtime_sec':x['training_time_sec'],'reference_inference_runtime_sec':x.get('reference_posterior_sampling_time_sec')} for x in npe])):
    rows.extend({'budget':budget,'method':method,**item} for item in items)
