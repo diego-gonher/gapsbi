@@ -40,6 +40,27 @@ def prepare_mask_augmented_nre_input(*, x_obs, mask, x_scaler, transform):
     )
 
 
+def make_masked_transformer_nre_classifier(embedding_config):
+    """Canonical NPE transformer embedded in SBI's standard ResNet classifier."""
+    from sbi.neural_nets import classifier_nn
+    from gapsbi.methods.masked_transformer_embedding import make_masked_transformer_embedding
+    return classifier_nn(model="resnet", embedding_net_x=make_masked_transformer_embedding(embedding_config), z_score_x="none", z_score_theta="independent")
+
+
+def load_nre_c_masked_transformer_checkpoint(checkpoint_path, *, repository_root="."):
+    """Restore the complete SBI ratio estimator including its canonical encoder."""
+    checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
+    from pathlib import Path
+    from gapsbi.datasets import apply_train_val_sample_limits
+    from gapsbi.io import load_gapsbi_hdf5
+    from gapsbi.preprocessing.scalers import make_scaled_theta_prior
+    from gapsbi.methods.masked_transformer_embedding import MaskedTransformerEmbeddingConfig
+    root=Path(repository_root); p=Path(checkpoint["dataset_path"]); d,_=load_gapsbi_hdf5(p if p.is_absolute() else root/p); d=apply_train_val_sample_limits(d,checkpoint["config"].get("max_train_samples"),checkpoint["config"].get("max_val_samples")); ts,xs=checkpoint["theta_scaler"],checkpoint["x_scaler"]
+    theta_train=torch.tensor(ts.transform(d["train"]["theta"]),dtype=torch.float32);theta_val=torch.tensor(ts.transform(d["val"]["theta"]),dtype=torch.float32)
+    x_train=prepare_mask_augmented_nre_input(x_obs=d["train"]["x_obs"],mask=d["train"]["mask"],x_scaler=xs,transform=checkpoint["x_scaling_metadata"]["transform"]);x_val=prepare_mask_augmented_nre_input(x_obs=d["val"]["x_obs"],mask=d["val"]["mask"],x_scaler=xs,transform=checkpoint["x_scaling_metadata"]["transform"])
+    ec=MaskedTransformerEmbeddingConfig(x_dim=25,**checkpoint["config"]["embedding"]);inf=FixedSplitNRE_C(prior=make_scaled_theta_prior("oup",2,theta_train),classifier=make_masked_transformer_nre_classifier(ec),device="cpu",show_progress_bars=False);inf.append_simulations(torch.cat((theta_train,theta_val)),torch.cat((x_train,x_val)));inf.set_fixed_train_val_split(len(theta_train),len(theta_val));inf._initialize_neural_network(False,0);inf._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"]);inf._neural_net.eval();return checkpoint,inf._neural_net
+
+
 def load_nre_a_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     """Rebuild an experimental full-data NRE-A ratio estimator for validation."""
     from pathlib import Path
