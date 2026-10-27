@@ -24,6 +24,20 @@ def prepare_zero_imputed_nre_input(*, x_obs, mask, x_scaler, transform):
     return zero_impute(scaled, torch.as_tensor(mask, dtype=torch.float32))
 
 
+def prepare_mask_augmented_nre_input(*, x_obs, mask, x_scaler, transform):
+    """Apply the canonical NPE mask-augmentation representation to raw input."""
+    from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_input
+    from gapsbi.preprocessing.scalers import transform_x_obs_with_fitted_scaler
+
+    scaled = transform_x_obs_with_fitted_scaler(
+        x_obs=np.asarray(x_obs), mask=np.asarray(mask), x_scaler=x_scaler,
+        transform=str(transform),
+    )
+    return make_zero_imputed_mask_augmented_input(
+        x_obs_scaled=scaled, mask=torch.as_tensor(mask, dtype=torch.float32)
+    )
+
+
 def load_nre_a_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     """Rebuild an experimental full-data NRE-A ratio estimator for validation."""
     from pathlib import Path
@@ -111,6 +125,50 @@ def load_nre_c_zero_imputation_checkpoint(checkpoint_path, *, repository_root=".
         x_scaler=x_scaler, transform=transform,
     )
     x_val = prepare_zero_imputed_nre_input(
+        x_obs=dataset["val"]["x_obs"], mask=dataset["val"]["mask"],
+        x_scaler=x_scaler, transform=transform,
+    )
+    inference = FixedSplitNRE_C(
+        prior=make_scaled_theta_prior("oup", 2, theta_train),
+        classifier=config["nre"]["classifier"], device="cpu", show_progress_bars=False,
+    )
+    inference.append_simulations(torch.cat((theta_train, theta_val)), torch.cat((x_train, x_val)))
+    inference.set_fixed_train_val_split(len(theta_train), len(theta_val))
+    inference._initialize_neural_network(retrain_from_scratch=False, start_idx=0)
+    inference._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"])
+    inference._neural_net.eval()
+    return checkpoint, inference._neural_net
+
+
+def load_nre_c_mask_augmentation_checkpoint(checkpoint_path, *, repository_root="."):
+    """Rebuild an experimental NRE-C estimator trained on [imputed x, mask]."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    from pathlib import Path
+    from gapsbi.datasets import apply_train_val_sample_limits
+    from gapsbi.io import load_gapsbi_hdf5
+    from gapsbi.preprocessing.scalers import make_scaled_theta_prior
+
+    root, config = Path(repository_root), checkpoint["config"]
+    dataset_path = Path(checkpoint["dataset_path"])
+    dataset, _ = load_gapsbi_hdf5(
+        dataset_path if dataset_path.is_absolute() else root / dataset_path
+    )
+    dataset = apply_train_val_sample_limits(
+        dataset, config.get("max_train_samples"), config.get("max_val_samples")
+    )
+    theta_scaler, x_scaler = checkpoint["theta_scaler"], checkpoint["x_scaler"]
+    theta_train = torch.tensor(
+        theta_scaler.transform(dataset["train"]["theta"]), dtype=torch.float32
+    )
+    theta_val = torch.tensor(
+        theta_scaler.transform(dataset["val"]["theta"]), dtype=torch.float32
+    )
+    transform = checkpoint["x_scaling_metadata"]["transform"]
+    x_train = prepare_mask_augmented_nre_input(
+        x_obs=dataset["train"]["x_obs"], mask=dataset["train"]["mask"],
+        x_scaler=x_scaler, transform=transform,
+    )
+    x_val = prepare_mask_augmented_nre_input(
         x_obs=dataset["val"]["x_obs"], mask=dataset["val"]["mask"],
         x_scaler=x_scaler, transform=transform,
     )
