@@ -37,6 +37,7 @@ def _history(inference: Any) -> tuple[list[float], list[float]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--skip-reference-evaluation", action="store_true")
     args = parser.parse_args()
     config = _config(args.config)
     if config.get("problem") != "oup":
@@ -87,6 +88,11 @@ def main() -> None:
             "checkpoint_path": str(checkpoint)}
         (directory / "training_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         print(json.dumps(summary, sort_keys=True))
+        if not args.skip_reference_evaluation:
+            # Local import keeps Step-1 training lightweight until a config opts
+            # into the OUP-only grid/reference workflow.
+            from evaluate import evaluate_checkpoint
+            evaluate_checkpoint(checkpoint, config)
 
 
 if __name__ == "__main__":

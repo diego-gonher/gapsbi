@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import torch
+import numpy as np
 from sbi.inference import NRE_A
 from torch.utils import data
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -34,6 +35,50 @@ def load_nre_a_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     inference._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"])
     inference._neural_net.eval()
     return checkpoint, inference._neural_net
+
+
+def evaluate_nre_a_oup_grid(estimator, *, theta_scaler, x_scaled, resolution, batch_size=50_000):
+    """Evaluate an NRE-A OUP posterior on its raw uniform-prior midpoint grid."""
+    if resolution <= 1 or batch_size <= 0:
+        raise ValueError("resolution and batch_size must be positive.")
+    t1 = (np.arange(resolution) + .5) * (2.0 / resolution)
+    t2 = -2.0 + (np.arange(resolution) + .5) * (5.0 / resolution)
+    g1, g2 = np.meshgrid(t1, t2, indexing="ij")
+    theta_raw = np.column_stack((g1.ravel(), g2.ravel()))
+    theta_scaled = torch.tensor(theta_scaler.transform(theta_raw), dtype=torch.float32)
+    x = torch.as_tensor(x_scaled, dtype=torch.float32).reshape(1, -1)
+    values = []
+    with torch.no_grad():
+        for start in range(0, len(theta_scaled), batch_size):
+            theta_batch = theta_scaled[start:start + batch_size]
+            values.append(estimator.unnormalized_log_ratio(theta_batch, x.expand(len(theta_batch), -1)).cpu().numpy())
+    log_ratio = np.concatenate(values).reshape(-1)
+    if not np.isfinite(log_ratio).all():
+        raise FloatingPointError("NRE-A grid contains nonfinite log-ratios.")
+    # log prior is constant (-log(10)) inside this grid. Retain it explicitly:
+    # NRE-A estimates log p(x|theta)-log p(x), hence posterior is prior * ratio.
+    log_posterior = log_ratio - np.log(10.0)
+    log_weights = log_posterior - np.logaddexp.reduce(log_posterior)
+    weights = np.exp(log_weights)
+    mean = weights @ theta_raw
+    centered = theta_raw - mean
+    cov = centered.T @ (centered * weights[:, None])
+    edge = np.zeros((resolution, resolution), dtype=bool)
+    edge[[0, -1], :] = True
+    edge[:, [0, -1]] = True
+    return {"resolution": int(resolution), "theta_raw": theta_raw, "weights": weights,
+            "mean": mean, "cov": cov, "boundary_mass": float(weights.reshape(resolution, resolution)[edge].sum()),
+            "cell_width": np.array([2.0 / resolution, 5.0 / resolution])}
+
+
+def sample_nre_a_oup_grid(grid, *, num_samples, seed):
+    """Sample raw OUP parameters with uniform within-cell jitter."""
+    if num_samples <= 0:
+        raise ValueError("num_samples must be positive.")
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(grid["weights"]), size=num_samples, p=grid["weights"])
+    draws = grid["theta_raw"][idx] + rng.uniform(-.5, .5, (num_samples, 2)) * grid["cell_width"]
+    return draws
 
 
 class FixedSplitNRE_A(NRE_A):

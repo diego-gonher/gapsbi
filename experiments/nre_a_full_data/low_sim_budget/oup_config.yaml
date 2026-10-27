@@ -11,3 +11,14 @@ nre:
   training_batch_size: 100
   stop_after_epochs: 20
   max_num_epochs: 5000
+
+evaluation:
+  reference_path: references/reference_posteriors_v1/oup_references.h5
+  grid_resolutions: [400, 800, 1600]
+  selected_grid_resolution: 800
+  grid_batch_size: 50000
+  reference_metrics:
+    c2st_max_samples_per_observation: 2000
+    c2st_n_folds: 3
+    c2st_hidden_layer_scale: 5
+    c2st_max_iter: 10000
