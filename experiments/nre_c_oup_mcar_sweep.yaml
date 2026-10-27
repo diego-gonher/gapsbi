@@ -1,0 +1,19 @@
+# Canonical matrix for the future sequential OUP NRE-C MCAR-10% campaign.
+# Runners should materialize method-specific configs from this tracked contract.
+problem: oup
+mechanism: mcar
+missing_fraction: 0.10
+dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps010_seed123.h5
+partial_reference_path: references/partial_data_references_v1/oup_mcar_eps010_references.h5
+seeds: [101, 202, 303, 404, 505]
+reference_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+budgets:
+  low: {max_train_samples: 900, max_val_samples: 100, training_batch_size: 100}
+  mid: {max_train_samples: 9000, max_val_samples: 1000, training_batch_size: 256}
+  high: {max_train_samples: null, max_val_samples: null, training_batch_size: 256}
+methods:
+  - nre_c_zero_imputation
+  - nre_c_mask_augmentation
+  - nre_c_learned_constant_imputation
+  - nre_c_probabilistic_learned_imputation
+  - nre_c_masked_transformer_embedding
