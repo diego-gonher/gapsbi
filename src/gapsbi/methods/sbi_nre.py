@@ -298,6 +298,62 @@ def load_nre_c_learned_constant_imputation_checkpoint(checkpoint_path, *, reposi
     return checkpoint, inference._neural_net, imputer
 
 
+def complete_rise_with_seed(imputer, x_obs, mask, seed):
+    """Draw one reproducible RISE completion; keep it fixed for a grid posterior."""
+    with torch.random.fork_rng():
+        torch.manual_seed(int(seed))
+        return imputer(x_obs, mask).completed_x
+
+
+def train_rise_imputation_nre_c(*, theta_train, x_full_train, x_obs_train, mask_train, theta_val, x_full_val, x_obs_val, mask_val, prior, classifier, rise, nre):
+    """Joint RISE/NRE-C optimization with the canonical RISE auxiliary losses."""
+    from gapsbi.methods.rise import RISEImputerMLP, compute_rise_losses
+    device=torch.device(nre.get("device","cpu")); xdim=x_obs_train.shape[1]
+    imputer=RISEImputerMLP(xdim,hidden_dim=int(rise["hidden_dim"]),num_layers=int(rise["num_layers"]),dropout=float(rise["dropout"]),latent_dim=int(rise["latent_dim"]),use_mask_head=bool(rise["use_mask_head"]),min_std=float(rise["min_std"])).to(device)
+    with torch.no_grad():
+        initial_train=imputer(x_obs_train.to(device),mask_train.to(device)).completed_x.cpu(); initial_val=imputer(x_obs_val.to(device),mask_val.to(device)).completed_x.cpu()
+    inf=FixedSplitNRE_C(prior=prior,classifier=classifier,device=str(device),show_progress_bars=False); inf.append_simulations(torch.cat((theta_train,theta_val)),torch.cat((initial_train,initial_val))); inf.set_fixed_train_val_split(len(theta_train),len(theta_val)); inf._initialize_neural_network(False,0); estimator=inf._neural_net.to(device)
+    opt=torch.optim.Adam(list(imputer.parameters())+list(estimator.parameters()),lr=float(rise["learning_rate"]))
+    def loader(theta,full,obs,mask,shuffle): return data.DataLoader(data.TensorDataset(theta,full,obs,mask),batch_size=int(rise["batch_size"]),shuffle=shuffle,drop_last=True)
+    tr,va=loader(theta_train,x_full_train,x_obs_train,mask_train,True),loader(theta_val,x_full_val,x_obs_val,mask_val,False)
+    history=[]; best=float("inf"); best_epoch=0; stalled=0; best_i=copy.deepcopy(imputer.state_dict()); best_e=copy.deepcopy(estimator.state_dict()); grad=False
+    for epoch in range(1,int(rise["max_num_epochs"])+1):
+        values=[]
+        for training,dl in ((True,tr),(False,va)):
+            imputer.train(training); estimator.train(training); losses=[]
+            for theta,full,obs,mask in dl:
+                if training: opt.zero_grad(set_to_none=True)
+                out=imputer(obs.to(device),mask.to(device)); nre_loss=inf._loss(theta.to(device),out.completed_x,int(nre["num_classes"])+1,float(nre["gamma"])); aux=compute_rise_losses(x_full=full.to(device),x_obs=obs.to(device),mask=mask.to(device),output=out,lambda_np=float(rise["lambda_np"]),lambda_mask=float(rise["lambda_mask"]),use_mask_head=bool(rise["use_mask_head"]))["total_aux_loss"]; total=nre_loss+aux
+                if training:
+                    total.backward(); grad |= bool(any(p.grad is not None and torch.isfinite(p.grad).all() and torch.any(p.grad != 0) for p in imputer.parameters())); torch.nn.utils.clip_grad_norm_(list(imputer.parameters())+list(estimator.parameters()),5.0); opt.step()
+                losses.append(float(total.detach()))
+            values.append(float(np.mean(losses)))
+        if not np.isfinite(values).all(): raise FloatingPointError("RISE NRE-C loss is nonfinite.")
+        history.append({"epoch":epoch,"train_total_loss":values[0],"val_total_loss":values[1]})
+        if values[1]<best: best,best_epoch,stalled=values[1],epoch,0;best_i,best_e=copy.deepcopy(imputer.state_dict()),copy.deepcopy(estimator.state_dict())
+        else:
+            stalled+=1
+            if stalled>=int(rise["stop_after_epochs"]): break
+    imputer.load_state_dict(best_i);estimator.load_state_dict(best_e);imputer.eval();estimator.eval()
+    return inf,imputer,estimator,history,best_epoch,grad
+
+
+def load_nre_c_probabilistic_learned_imputation_checkpoint(path, *, repository_root="."):
+    """Restore the RISE imputer and NRE-C classifier checkpoint."""
+    checkpoint=torch.load(path,map_location="cpu",weights_only=False)
+    from pathlib import Path
+    from gapsbi.datasets import apply_train_val_sample_limits
+    from gapsbi.io import load_gapsbi_hdf5
+    from gapsbi.methods.learned_imputation import prepare_learned_imputation_arrays
+    from gapsbi.methods.rise import RISEImputerMLP
+    from gapsbi.preprocessing.scalers import make_scaled_theta_prior
+    root=Path(repository_root); dataset_path=Path(checkpoint["dataset_path"]); dataset,_=load_gapsbi_hdf5(dataset_path if dataset_path.is_absolute() else root/dataset_path); dataset=apply_train_val_sample_limits(dataset,checkpoint["config"].get("max_train_samples"),checkpoint["config"].get("max_val_samples")); prepared=prepare_learned_imputation_arrays(dataset,"oup"); rise=checkpoint["config"]["rise"]
+    imputer=RISEImputerMLP(int(checkpoint["x_dim"]),hidden_dim=int(rise["hidden_dim"]),num_layers=int(rise["num_layers"]),dropout=float(rise["dropout"]),latent_dim=int(rise["latent_dim"]),use_mask_head=bool(rise["use_mask_head"]),min_std=float(rise["min_std"])); imputer.load_state_dict(checkpoint["imputer_state_dict"]); imputer.eval()
+    with torch.no_grad():
+        xtr=complete_rise_with_seed(imputer,prepared["x_obs_train_scaled"],prepared["mask_train"],checkpoint["initialization_imputation_seed"]); xva=complete_rise_with_seed(imputer,prepared["x_obs_val_scaled"],prepared["mask_val"],checkpoint["initialization_imputation_seed"]+1)
+    inf=FixedSplitNRE_C(prior=make_scaled_theta_prior("oup",2,prepared["theta_train"]),classifier=checkpoint["config"]["nre"]["classifier"],device="cpu",show_progress_bars=False);inf.append_simulations(torch.cat((prepared["theta_train"],prepared["theta_val"])),torch.cat((xtr,xva)));inf.set_fixed_train_val_split(len(prepared["theta_train"]),len(prepared["theta_val"]));inf._initialize_neural_network(False,0);inf._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"]);inf._neural_net.eval();return checkpoint,inf._neural_net,imputer
+
+
 def evaluate_nre_a_oup_grid(estimator, *, theta_scaler, x_scaled, resolution, batch_size=50_000):
     """Evaluate an NRE-A OUP posterior on its raw uniform-prior midpoint grid."""
     if resolution <= 1 or batch_size <= 0:

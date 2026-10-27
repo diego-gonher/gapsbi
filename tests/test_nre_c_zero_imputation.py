@@ -12,6 +12,7 @@ from gapsbi.methods.sbi_nre import (
     prepare_mask_augmented_nre_input,
     prepare_zero_imputed_nre_input,
     train_learned_constant_imputation_nre_c,
+    complete_rise_with_seed,
 )
 
 
@@ -87,3 +88,17 @@ def test_learned_constant_nre_c_receives_gradient_and_updates_constants():
     assert result.imputer.constants[1].item() != 0.0
     assert np.isfinite(result.training_loss).all()
     assert np.isfinite(result.validation_loss).all()
+
+
+def test_rise_completion_is_stochastic_but_reproducible_per_seed():
+    from gapsbi.methods.rise import RISEImputerMLP
+
+    imputer = RISEImputerMLP(input_dim=3, hidden_dim=8, latent_dim=2)
+    x = torch.zeros(2, 3)
+    mask = torch.tensor([[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]])
+    first = complete_rise_with_seed(imputer, x, mask, 17)
+    repeated = complete_rise_with_seed(imputer, x, mask, 17)
+    other = complete_rise_with_seed(imputer, x, mask, 18)
+    assert torch.equal(first, repeated)
+    assert not torch.equal(first, other)
+    assert torch.equal(first[:, [0, 2]], x[:, [0, 2]])
