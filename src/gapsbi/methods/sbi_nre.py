@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import torch
 import numpy as np
-from sbi.inference import NRE_A
+from sbi.inference import NRE_A, NRE_C
 from torch.utils import data
 from torch.utils.data.sampler import SubsetRandomSampler
 
@@ -29,6 +29,31 @@ def load_nre_a_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     x_val = torch.tensor(x_scaler.transform(dataset["val"]["x_full"]), dtype=torch.float32)
     prior = make_scaled_theta_prior(checkpoint["problem"], checkpoint["theta_dim"], theta_train)
     inference = FixedSplitNRE_A(prior=prior, classifier=config["nre"]["classifier"], device="cpu", show_progress_bars=False)
+    inference.append_simulations(torch.cat((theta_train, theta_val)), torch.cat((x_train, x_val)))
+    inference.set_fixed_train_val_split(len(theta_train), len(theta_val))
+    inference._initialize_neural_network(retrain_from_scratch=False, start_idx=0)
+    inference._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"])
+    inference._neural_net.eval()
+    return checkpoint, inference._neural_net
+
+
+def load_nre_c_full_data_checkpoint(checkpoint_path, *, repository_root="."):
+    """Rebuild an experimental full-data NRE-C ratio estimator for validation."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    from pathlib import Path
+    from gapsbi.datasets import apply_train_val_sample_limits
+    from gapsbi.io import load_gapsbi_hdf5
+    from gapsbi.preprocessing.scalers import make_scaled_theta_prior
+    root, config = Path(repository_root), checkpoint["config"]
+    path = Path(checkpoint["dataset_path"])
+    dataset, _ = load_gapsbi_hdf5(path if path.is_absolute() else root / path)
+    dataset = apply_train_val_sample_limits(dataset, config["max_train_samples"], config["max_val_samples"])
+    theta_scaler, x_scaler = checkpoint["theta_scaler"], checkpoint["x_scaler"]
+    theta_train = torch.tensor(theta_scaler.transform(dataset["train"]["theta"]), dtype=torch.float32)
+    theta_val = torch.tensor(theta_scaler.transform(dataset["val"]["theta"]), dtype=torch.float32)
+    x_train = torch.tensor(x_scaler.transform(dataset["train"]["x_full"]), dtype=torch.float32)
+    x_val = torch.tensor(x_scaler.transform(dataset["val"]["x_full"]), dtype=torch.float32)
+    inference = FixedSplitNRE_C(prior=make_scaled_theta_prior("oup", 2, theta_train), classifier=config["nre"]["classifier"], device="cpu", show_progress_bars=False)
     inference.append_simulations(torch.cat((theta_train, theta_val)), torch.cat((x_train, x_val)))
     inference.set_fixed_train_val_split(len(theta_train), len(theta_val))
     inference._initialize_neural_network(retrain_from_scratch=False, start_idx=0)
@@ -113,3 +138,13 @@ class FixedSplitNRE_A(NRE_A):
             data.DataLoader(dataset, batch_size=training_batch_size, drop_last=True,
                             sampler=SubsetRandomSampler(val_indices.tolist()), **common),
         )
+
+
+class FixedSplitNRE_C(FixedSplitNRE_A, NRE_C):
+    """NRE-C with the same persisted full-data train/validation split."""
+
+    # FixedSplitNRE_A contributes only the dataloader implementation. Explicit
+    # dispatch prevents Python's MRO from selecting NRE-A's binary objective.
+    train = NRE_C.train
+    _loss = NRE_C._loss
+    _get_losses = NRE_C._get_losses

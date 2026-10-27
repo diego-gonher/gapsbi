@@ -1,0 +1,24 @@
+dataset_path: data/canonical_v1/oup/mcar/oup_mcar_eps010_seed123.h5
+problem: oup
+output_dir: outputs_low_sim_budget/nre_c_full_data/oup_full_data
+seeds: [101]
+max_train_samples: 900
+max_val_samples: 100
+nre:
+  classifier: resnet
+  device: cpu
+  training_batch_size: 100
+  stop_after_epochs: 20
+  max_num_epochs: 5000
+  num_classes: 5
+  gamma: 1.0
+evaluation:
+  reference_path: references/reference_posteriors_v1/oup_references.h5
+  grid_resolutions: [400, 800]
+  selected_grid_resolution: 800
+  grid_batch_size: 50000
+  reference_metrics:
+    c2st_max_samples_per_observation: 2000
+    c2st_n_folds: 3
+    c2st_hidden_layer_scale: 5
+    c2st_max_iter: 10000
