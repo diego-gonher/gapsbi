@@ -14,7 +14,7 @@ from gapsbi.utils.seeding import set_all_seeds
 
 def main():
     p=argparse.ArgumentParser(description=__doc__); p.add_argument('--config',type=Path,required=True); p.add_argument('--skip-reference-evaluation',action='store_true'); a=p.parse_args()
-    config=yaml.safe_load(a.config.read_text()); d,meta=load_gapsbi_hdf5(config['dataset_path']); d=apply_train_val_sample_limits(d,config['max_train_samples'],config['max_val_samples'])
+    config=yaml.safe_load(a.config.read_text()); d,meta=load_gapsbi_hdf5(config['dataset_path']); d=apply_train_val_sample_limits(d,config.get('max_train_samples'),config.get('max_val_samples'))
     tt,tv,_test,ts=scale_theta_train_val_test(d['train']['theta'],d['val']['theta'],d['test']['theta'],infer_theta_transform('oup'))
     xt,xv,_testx,xs,xmeta=scale_x_train_val_test(d['train']['x_full'],d['val']['x_full'],d['test']['x_full'],infer_x_transform('oup'))
     cfg=config['nre']; prior=make_scaled_theta_prior('oup',2,tt)

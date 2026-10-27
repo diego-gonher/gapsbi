@@ -20,7 +20,9 @@ def load_nre_a_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     dataset_path = Path(checkpoint["dataset_path"])
     dataset, _ = load_gapsbi_hdf5(dataset_path if dataset_path.is_absolute() else root / dataset_path)
     config = checkpoint["config"]
-    dataset = apply_train_val_sample_limits(dataset, config["max_train_samples"], config["max_val_samples"])
+    dataset = apply_train_val_sample_limits(
+        dataset, config.get("max_train_samples"), config.get("max_val_samples")
+    )
     theta_scaler = checkpoint["theta_scaler"]
     theta_train = torch.tensor(theta_scaler.transform(dataset["train"]["theta"]), dtype=torch.float32)
     theta_val = torch.tensor(theta_scaler.transform(dataset["val"]["theta"]), dtype=torch.float32)
@@ -47,7 +49,9 @@ def load_nre_c_full_data_checkpoint(checkpoint_path, *, repository_root="."):
     root, config = Path(repository_root), checkpoint["config"]
     path = Path(checkpoint["dataset_path"])
     dataset, _ = load_gapsbi_hdf5(path if path.is_absolute() else root / path)
-    dataset = apply_train_val_sample_limits(dataset, config["max_train_samples"], config["max_val_samples"])
+    dataset = apply_train_val_sample_limits(
+        dataset, config.get("max_train_samples"), config.get("max_val_samples")
+    )
     theta_scaler, x_scaler = checkpoint["theta_scaler"], checkpoint["x_scaler"]
     theta_train = torch.tensor(theta_scaler.transform(dataset["train"]["theta"]), dtype=torch.float32)
     theta_val = torch.tensor(theta_scaler.transform(dataset["val"]["theta"]), dtype=torch.float32)
