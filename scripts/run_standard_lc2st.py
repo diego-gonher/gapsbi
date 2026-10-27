@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 from pathlib import Path
+import time
 from gapsbi.evaluation.standard_lc2st import run_from_artifacts, write_standard_lc2st_result
 
 def main() -> None:
@@ -20,6 +21,9 @@ def main() -> None:
     p.add_argument("--classifier-n-iter-no-change", type=int, default=50)
     p.add_argument("--overwrite", action="store_true")
     a = p.parse_args()
+    started = time.perf_counter()
+    print("Loading artifacts and sampling posterior draws...", flush=True)
     result = run_from_artifacts(checkpoint_path=a.checkpoint, calibration_path=a.calibration, partial_reference_path=a.partial_reference, repository_root=Path(a.repository_root), classifier_seed=a.classifier_seed, calibration_posterior_seed=a.calibration_posterior_seed, reference_posterior_seed=a.reference_posterior_seed, num_reference_posterior_samples=a.num_reference_posterior_samples, num_permutations=a.num_permutations, alpha=a.alpha, classifier_max_iter=a.classifier_max_iter, classifier_n_iter_no_change=a.classifier_n_iter_no_change)
     write_standard_lc2st_result(a.output, result, overwrite=a.overwrite)
+    print(f"Saved {a.output} in {time.perf_counter() - started:.1f}s", flush=True)
 if __name__ == "__main__": main()

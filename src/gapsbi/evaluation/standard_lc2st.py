@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import warnings
 from pathlib import Path
 from typing import Any
@@ -108,8 +109,13 @@ def run_standard_lc2st(*, calibration_q: np.ndarray, calibration_prior: np.ndarr
     test = LC2ST(thetas=torch.as_tensor(priorz, dtype=torch.float32), xs=torch.as_tensor(contextz, dtype=torch.float32), posterior_samples=torch.as_tensor(qz, dtype=torch.float32), seed=int(classifier_seed), num_folds=1, num_ensemble=1, z_score=False, classifier_kwargs={"max_iter": classifier_max_iter, "n_iter_no_change": classifier_n_iter_no_change}, num_trials_null=int(num_permutations), permutation=True, device="cpu")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)
+        fit_started = time.perf_counter()
         test.train_on_observed_data(seed=int(classifier_seed), verbosity=0)
+        observed_fit_seconds = time.perf_counter() - fit_started
+        permutation_started = time.perf_counter()
         test.train_under_null_hypothesis(verbosity=0)
+        permutation_fit_seconds = time.perf_counter() - permutation_started
+    local_started = time.perf_counter()
     results = []
     for index, samples, x in zip(reference_indices, eval_qz, eval_contextz, strict=True):
         theta, x_tensor = torch.as_tensor(samples, dtype=torch.float32), torch.as_tensor(x[None], dtype=torch.float32)
@@ -117,7 +123,7 @@ def run_standard_lc2st(*, calibration_q: np.ndarray, calibration_prior: np.ndarr
         null = _null_array(test.get_statistics_under_null_hypothesis(theta, x_tensor, verbosity=0))
         p_value = corrected_permutation_p_value(statistic, null)
         results.append({"reference_index": int(index), "local_mse": statistic, "null_local_mse": null.tolist(), "p_value": p_value, "reject": bool(p_value <= alpha)})
-    return {"schema_name": SCHEMA_NAME, "schema_version": SCHEMA_VERSION, "target": "q_theta_given_x_obs_mask", "classifier": {"implementation": "sbi.diagnostics.lc2st.LC2ST", "z_score": False, "seed": int(classifier_seed), "permutation_seed": int(classifier_seed), "num_permutations": int(num_permutations), "alpha": float(alpha), "standardizer": scaler}, "reference_results": results}
+    return {"schema_name": SCHEMA_NAME, "schema_version": SCHEMA_VERSION, "target": "q_theta_given_x_obs_mask", "classifier": {"implementation": "sbi.diagnostics.lc2st.LC2ST", "z_score": False, "seed": int(classifier_seed), "permutation_seed": int(classifier_seed), "num_permutations": int(num_permutations), "alpha": float(alpha), "standardizer": scaler}, "timing_seconds": {"observed_classifier_fit": observed_fit_seconds, "permutation_classifier_fit": permutation_fit_seconds, "local_evaluation": time.perf_counter() - local_started}, "reference_results": results}
 
 
 def load_calibration_pairs(path: str | Path) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
@@ -133,13 +139,19 @@ def run_from_artifacts(*, checkpoint_path: str | Path, calibration_path: str | P
     adapter = load_npe_checkpoint_adapter(checkpoint_path, repository_root=repository_root)
     calibration, calibration_meta = load_calibration_pairs(calibration_path)
     observations, _reference, reference_meta, _diagnostics = load_partial_data_reference_posteriors_hdf5(partial_reference_path)
-    if calibration_meta.get("problem") != adapter.problem or reference_meta.get("problem") != adapter.problem:
+    if calibration_meta.get("task") != adapter.problem or reference_meta.get("problem") != adapter.problem:
         raise ValueError("Checkpoint, calibration, and partial-reference task must agree.")
     assert_calibration_separate_from_evaluation(calibration, observations)
+    posterior_started = time.perf_counter()
     q, prior, context = build_calibration_classes(adapter, calibration, calibration_posterior_seed)
+    calibration_posterior_seconds = time.perf_counter() - posterior_started
+    posterior_started = time.perf_counter()
     eval_q = adapter.sample(observations["x_obs"], observations["mask"], num_posterior_samples=num_reference_posterior_samples, seed=reference_posterior_seed)
+    reference_posterior_seconds = time.perf_counter() - posterior_started
     result = run_standard_lc2st(calibration_q=q, calibration_prior=prior, calibration_context=context, evaluation_q=eval_q, evaluation_context=mask_augmented_context(observations["x_obs"], observations["mask"]).astype(np.float32), reference_indices=observations.get("reference_indices", np.arange(eval_q.shape[0])), classifier_seed=classifier_seed, num_permutations=num_permutations, alpha=alpha, classifier_max_iter=classifier_max_iter, classifier_n_iter_no_change=classifier_n_iter_no_change)
     result["provenance"] = {"checkpoint": str(checkpoint_path), "calibration": str(calibration_path), "partial_reference": str(partial_reference_path), "task": adapter.problem, "calibration_metadata": calibration_meta, "reference_metadata": reference_meta, "posterior_sampling_seeds": {"calibration": calibration_posterior_seed, "reference": reference_posterior_seed}}
+    result["timing_seconds"]["calibration_posterior_sampling"] = calibration_posterior_seconds
+    result["timing_seconds"]["reference_posterior_sampling"] = reference_posterior_seconds
     return result
 
 

@@ -58,7 +58,11 @@ def _result(seed: int = 13):
 
 def test_runner_schema_reference_ids_pvalues_and_reproducibility(tmp_path):
     first, second = _result(), _result()
-    assert first == second
+    assert first["reference_results"] == second["reference_results"]
+    assert set(first["timing_seconds"]) == {
+        "observed_classifier_fit", "permutation_classifier_fit", "local_evaluation"
+    }
+    assert all(value >= 0 for value in first["timing_seconds"].values())
     assert first["classifier"]["z_score"] is False
     assert [row["reference_index"] for row in first["reference_results"]] == [8, 2]
     for row in first["reference_results"]:
