@@ -11,6 +11,7 @@ from gapsbi.methods.mask_augmentation import make_zero_imputed_mask_augmented_in
 from gapsbi.methods.sbi_nre import (
     prepare_mask_augmented_nre_input,
     prepare_zero_imputed_nre_input,
+    train_learned_constant_imputation_nre_c,
 )
 
 
@@ -67,3 +68,22 @@ def test_select_reference_positions_rejects_unavailable_id():
         assert "not uniquely available" in str(error)
     else:
         raise AssertionError("Unavailable reference ID was accepted.")
+
+
+def test_learned_constant_nre_c_receives_gradient_and_updates_constants():
+    torch.manual_seed(4)
+    theta_train, theta_val = torch.randn(8, 2), torch.randn(4, 2)
+    x_train, x_val = torch.randn(8, 3), torch.randn(4, 3)
+    mask_train = torch.tensor([[1.0, 0.0, 1.0]]).repeat(8, 1)
+    mask_val = torch.tensor([[1.0, 0.0, 1.0]]).repeat(4, 1)
+    prior = torch.distributions.Independent(torch.distributions.Normal(torch.zeros(2), torch.ones(2)), 1)
+    result = train_learned_constant_imputation_nre_c(
+        theta_train=theta_train, x_obs_train_scaled=x_train, mask_train=mask_train,
+        theta_val=theta_val, x_obs_val_scaled=x_val, mask_val=mask_val, prior=prior,
+        classifier="linear", training_batch_size=4, num_classes=2, max_num_epochs=2,
+        stop_after_epochs=2,
+    )
+    assert result.constant_gradient_observed
+    assert result.imputer.constants[1].item() != 0.0
+    assert np.isfinite(result.training_loss).all()
+    assert np.isfinite(result.validation_loss).all()

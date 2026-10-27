@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import torch
 import numpy as np
+import copy
+from dataclasses import dataclass
 from sbi.inference import NRE_A, NRE_C
 from torch.utils import data
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -182,6 +184,118 @@ def load_nre_c_mask_augmentation_checkpoint(checkpoint_path, *, repository_root=
     inference._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"])
     inference._neural_net.eval()
     return checkpoint, inference._neural_net
+
+
+@dataclass
+class LearnedConstantNRECResult:
+    """Joint learned-constant/NRE-C training state."""
+
+    inference: FixedSplitNRE_C
+    imputer: torch.nn.Module
+    estimator: torch.nn.Module
+    training_loss: list[float]
+    validation_loss: list[float]
+    best_epoch: int
+    constant_gradient_observed: bool
+
+
+def train_learned_constant_imputation_nre_c(
+    *, theta_train, x_obs_train_scaled, mask_train, theta_val, x_obs_val_scaled,
+    mask_val, prior, classifier, device="cpu", training_batch_size=100,
+    num_classes=5, gamma=1.0, learning_rate=5e-4, constant_learning_rate=1e-3,
+    stop_after_epochs=20, max_num_epochs=5000, init_value=0.0,
+):
+    """Jointly optimize canonical learned constants with SBI's NRE-C loss."""
+    from gapsbi.methods.learned_constant_imputation import LearnedConstantImputer
+
+    device = torch.device(device)
+    if training_batch_size > len(theta_train) or training_batch_size > len(theta_val):
+        raise ValueError("training_batch_size exceeds a persisted split.")
+    imputer = LearnedConstantImputer(x_obs_train_scaled.shape[1], init_value=init_value).to(device)
+    # SBI initializes its ResNet (and internal z-scoring) from the same
+    # zero-valued learned-constant initialization used by the NPE method.
+    with torch.no_grad():
+        x_train_initial = imputer(x_obs_train_scaled.to(device), mask_train.to(device)).cpu()
+        x_val_initial = imputer(x_obs_val_scaled.to(device), mask_val.to(device)).cpu()
+    inference = FixedSplitNRE_C(prior=prior, classifier=classifier, device=str(device), show_progress_bars=False)
+    inference.append_simulations(torch.cat((theta_train, theta_val)), torch.cat((x_train_initial, x_val_initial)))
+    inference.set_fixed_train_val_split(len(theta_train), len(theta_val))
+    inference._initialize_neural_network(retrain_from_scratch=False, start_idx=0)
+    estimator = inference._neural_net.to(device)
+    optimizer = torch.optim.Adam([
+        {"params": estimator.parameters(), "lr": float(learning_rate)},
+        {"params": imputer.parameters(), "lr": float(constant_learning_rate)},
+    ])
+    train_loader = data.DataLoader(data.TensorDataset(theta_train, x_obs_train_scaled, mask_train), batch_size=int(training_batch_size), shuffle=True, drop_last=True)
+    val_loader = data.DataLoader(data.TensorDataset(theta_val, x_obs_val_scaled, mask_val), batch_size=int(training_batch_size), shuffle=False, drop_last=True)
+    best_val, best_epoch, stalled = float("inf"), 0, 0
+    best_imputer, best_estimator = copy.deepcopy(imputer.state_dict()), copy.deepcopy(estimator.state_dict())
+    training_loss, validation_loss, constant_gradient_observed = [], [], False
+    for epoch in range(1, int(max_num_epochs) + 1):
+        imputer.train(); estimator.train(); train_losses = []
+        for theta, x_obs, mask in train_loader:
+            optimizer.zero_grad(set_to_none=True)
+            loss = inference._loss(theta.to(device), imputer(x_obs.to(device), mask.to(device)), int(num_classes) + 1, float(gamma))
+            loss.backward()
+            constant_gradient_observed |= bool(
+                imputer.constants.grad is not None
+                and torch.isfinite(imputer.constants.grad).all()
+                and torch.any(imputer.constants.grad != 0)
+            )
+            torch.nn.utils.clip_grad_norm_(list(estimator.parameters()) + list(imputer.parameters()), max_norm=5.0)
+            optimizer.step()
+            train_losses.append(float(loss.detach().cpu()))
+        imputer.eval(); estimator.eval(); val_losses = []
+        with torch.no_grad():
+            for theta, x_obs, mask in val_loader:
+                loss = inference._loss(theta.to(device), imputer(x_obs.to(device), mask.to(device)), int(num_classes) + 1, float(gamma))
+                val_losses.append(float(loss.detach().cpu()))
+        train_mean, val_mean = float(np.mean(train_losses)), float(np.mean(val_losses))
+        if not np.isfinite(train_mean) or not np.isfinite(val_mean):
+            raise FloatingPointError("NRE-C learned-constant loss is nonfinite.")
+        training_loss.append(train_mean); validation_loss.append(val_mean)
+        if val_mean < best_val:
+            best_val, best_epoch, stalled = val_mean, epoch, 0
+            best_imputer, best_estimator = copy.deepcopy(imputer.state_dict()), copy.deepcopy(estimator.state_dict())
+        else:
+            stalled += 1
+            if stalled >= int(stop_after_epochs):
+                break
+    imputer.load_state_dict(best_imputer); estimator.load_state_dict(best_estimator)
+    imputer.eval(); estimator.eval()
+    return LearnedConstantNRECResult(inference, imputer, estimator, training_loss, validation_loss, best_epoch, constant_gradient_observed)
+
+
+def load_nre_c_learned_constant_imputation_checkpoint(checkpoint_path, *, repository_root="."):
+    """Restore experimental learned constants and their OUP NRE-C classifier."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    from pathlib import Path
+    from gapsbi.datasets import apply_train_val_sample_limits
+    from gapsbi.io import load_gapsbi_hdf5
+    from gapsbi.methods.learned_constant_imputation import LearnedConstantImputer
+    from gapsbi.preprocessing.scalers import make_scaled_theta_prior, transform_x_obs_with_fitted_scaler
+
+    root, config = Path(repository_root), checkpoint["config"]
+    dataset_path = Path(checkpoint["dataset_path"])
+    dataset, _ = load_gapsbi_hdf5(dataset_path if dataset_path.is_absolute() else root / dataset_path)
+    dataset = apply_train_val_sample_limits(dataset, config.get("max_train_samples"), config.get("max_val_samples"))
+    theta_scaler, x_scaler = checkpoint["theta_scaler"], checkpoint["x_scaler"]
+    theta_train = torch.tensor(theta_scaler.transform(dataset["train"]["theta"]), dtype=torch.float32)
+    theta_val = torch.tensor(theta_scaler.transform(dataset["val"]["theta"]), dtype=torch.float32)
+    transform = checkpoint["x_scaling_metadata"]["transform"]
+    def scaled(split):
+        return transform_x_obs_with_fitted_scaler(dataset[split]["x_obs"], dataset[split]["mask"], x_scaler, transform)
+    imputer = LearnedConstantImputer(int(checkpoint["x_dim"]), float(config["learned_constant_imputation"]["init_value"]))
+    imputer.load_state_dict(checkpoint["imputer_state_dict"]); imputer.eval()
+    with torch.no_grad():
+        x_train = imputer(scaled("train"), torch.as_tensor(dataset["train"]["mask"], dtype=torch.float32))
+        x_val = imputer(scaled("val"), torch.as_tensor(dataset["val"]["mask"], dtype=torch.float32))
+    inference = FixedSplitNRE_C(prior=make_scaled_theta_prior("oup", 2, theta_train), classifier=config["nre"]["classifier"], device="cpu", show_progress_bars=False)
+    inference.append_simulations(torch.cat((theta_train, theta_val)), torch.cat((x_train, x_val)))
+    inference.set_fixed_train_val_split(len(theta_train), len(theta_val))
+    inference._initialize_neural_network(retrain_from_scratch=False, start_idx=0)
+    inference._neural_net.load_state_dict(checkpoint["density_estimator_state_dict"]); inference._neural_net.eval()
+    return checkpoint, inference._neural_net, imputer
 
 
 def evaluate_nre_a_oup_grid(estimator, *, theta_scaler, x_scaled, resolution, batch_size=50_000):
