@@ -88,6 +88,19 @@ BASE_MARKER_SIZE = 3.1
 COMBINED_MARKER_SIZE = 2.8
 FULL_DATA_BASE_MARKER_SIZE = 5.0
 FULL_DATA_COMBINED_MARKER_SIZE = 4.8
+NRE_C_OVERLAY_COLOR = "#6b6b6b"
+NRE_C_METHODS = {
+    "npe_zero_imputation": "nre_c_zero_imputation",
+    "npe_mask_augmentation": "nre_c_mask_augmentation",
+    "npe_learned_constant_imputation": "nre_c_learned_constant_imputation",
+    "npe_probabilistic_learned_imputation": "nre_c_probabilistic_learned_imputation",
+    "npe_masked_transformer_embedding": "nre_c_masked_transformer_embedding",
+}
+NRE_C_TO_BENCHMARK_BUDGET = {
+    "low": "low_sim_budget",
+    "mid": "mid_sim_budget",
+    "high": "high_sim_budget",
+}
 
 
 @dataclass(frozen=True)
@@ -199,6 +212,20 @@ def parse_args() -> argparse.Namespace:
             "Generate combined MCAR/MNAR figures. MCAR uses solid lines; "
             "MNAR uses dashed lines and open off-scale triangles."
         ),
+    )
+    parser.add_argument(
+        "--nre-c-oup-overlay",
+        action="store_true",
+        help=(
+            "Add the validated OUP NRE-C 10% MCAR/MNAR curves to the combined "
+            "C2ST figure. This is an optional, separate overlay figure."
+        ),
+    )
+    parser.add_argument(
+        "--nre-c-analysis-root",
+        type=Path,
+        default=Path("outputs/analysis/nre_c_comparison"),
+        help="Root containing oup_mcar_eps010 and oup_mnar_eps010 NPE/NRE-C analyses.",
     )
     parser.add_argument(
         "--format",
@@ -490,6 +517,7 @@ def plot_combined_missingness_grid(
     df: pd.DataFrame,
     *,
     metric: MetricSpec,
+    nre_c_oup_overlay: pd.DataFrame | None = None,
 ) -> tuple[plt.Figure, FigureReport]:
     fig, axes = plt.subplots(
         nrows=len(PROBLEM_ORDER),
@@ -537,6 +565,18 @@ def plot_combined_missingness_grid(
                 )
                 offscale_points += curve_offscale
                 max_actual = max(max_actual, curve_max)
+                if problem == "oup" and nre_c_oup_overlay is not None:
+                    panel = prepare_nre_c_overlay_panel(
+                        nre_c_oup_overlay, method="nre_c_full_data", mechanism="none"
+                    )
+                    curve_offscale, curve_max = plot_curve(
+                        ax, x, panel, color=NRE_C_OVERLAY_COLOR, label="NRE-C (OUP, 10%)",
+                        y_limits=y_limits, offscale_x_offset=0.0, linestyle="-",
+                        offscale_open=False, marker_size=FULL_DATA_COMBINED_MARKER_SIZE,
+                        marker=FULL_DATA_MARKER, marker_open=False,
+                    )
+                    offscale_points += curve_offscale
+                    max_actual = max(max_actual, curve_max)
             else:
                 for missingness in COMBINED_MISSINGNESS_ORDER:
                     for epsilon in FRACTION_ORDER:
@@ -563,6 +603,21 @@ def plot_combined_missingness_grid(
                         )
                         offscale_points += curve_offscale
                         max_actual = max(max_actual, curve_max)
+                        if problem == "oup" and nre_c_oup_overlay is not None and epsilon == 0.10:
+                            nre_c_method = NRE_C_METHODS[method]
+                            panel = prepare_nre_c_overlay_panel(
+                                nre_c_oup_overlay, method=nre_c_method, mechanism=missingness
+                            )
+                            curve_offscale, curve_max = plot_curve(
+                                ax, x, panel, color=NRE_C_OVERLAY_COLOR,
+                                label="NRE-C (OUP, 10%)", y_limits=y_limits,
+                                offscale_x_offset=0.0,
+                                linestyle=COMBINED_MISSINGNESS_LINESTYLES[missingness],
+                                offscale_open=COMBINED_MISSINGNESS_OFFSCALE_OPEN[missingness],
+                                marker_size=COMBINED_MARKER_SIZE, marker_open=missingness == "mnar",
+                            )
+                            offscale_points += curve_offscale
+                            max_actual = max(max_actual, curve_max)
 
             if row_idx < len(PROBLEM_ORDER) - 1:
                 ax.tick_params(labelbottom=False)
@@ -580,14 +635,14 @@ def plot_combined_missingness_grid(
     fig.supxlabel("Simulation budget", fontsize=12, y=0.040)
     fig.supylabel(metric.label, fontsize=12, x=0.012)
     fig.legend(
-        handles=combined_legend_handles(),
+        handles=combined_legend_handles(include_nre_c=nre_c_oup_overlay is not None),
         loc="upper center",
         bbox_to_anchor=(0.5, 0.955),
-        ncol=6,
+        ncol=7 if nre_c_oup_overlay is not None else 6,
         frameon=False,
         fontsize=9.7,
         handlelength=2.0,
-        columnspacing=1.15,
+        columnspacing=1.05 if nre_c_oup_overlay is not None else 1.15,
     )
     fig.subplots_adjust(left=0.075, right=0.995, bottom=0.10, top=0.825, wspace=0.10, hspace=0.16)
     report = FigureReport(
@@ -602,8 +657,8 @@ def plot_combined_missingness_grid(
     return fig, report
 
 
-def combined_legend_handles() -> list[Line2D]:
-    return [
+def combined_legend_handles(*, include_nre_c: bool = False) -> list[Line2D]:
+    handles = [
         Line2D([0], [0], color=FULL_DATA_COLOR, marker=FULL_DATA_MARKER, linewidth=1.0, markersize=4.8, label="Full-data NPE"),
         *[
             Line2D(
@@ -631,6 +686,96 @@ def combined_legend_handles() -> list[Line2D]:
             label="MNAR",
         ),
     ]
+    if include_nre_c:
+        handles.append(
+            Line2D(
+                [0], [0], color=NRE_C_OVERLAY_COLOR, marker="o", linewidth=1.0,
+                markersize=3.2, label="NRE-C (OUP, 10%)",
+            )
+        )
+    return handles
+
+
+def prepare_nre_c_overlay_panel(
+    overlay: pd.DataFrame, *, method: str, mechanism: str,
+) -> pd.DataFrame:
+    """Aggregate one validated OUP NRE-C curve using benchmark plot conventions."""
+    rows = overlay[(overlay["method"] == method) & (overlay["mechanism"] == mechanism)]
+    grouped = (
+        rows.groupby("budget")
+        .agg(mean=("value", "mean"), std=("value", "std"), n=("value", "count"))
+        .reindex(BUDGET_ORDER)
+        .reset_index()
+    )
+    grouped["se"] = grouped["std"] / np.sqrt(grouped["n"])
+    grouped["ci95"] = 1.96 * grouped["se"]
+    grouped.loc[grouped["n"] <= 1, "ci95"] = 0.0
+    return grouped
+
+
+def load_nre_c_oup_overlay(root: Path) -> pd.DataFrame:
+    """Load and cross-check saved OUP NRE-C C2ST seed metrics for 10% MCAR/MNAR."""
+    frames: list[pd.DataFrame] = []
+    expected_seeds = {101, 202, 303, 404, 505}
+    expected_budgets = {"low", "mid", "high"}
+    expected_methods = set(NRE_C_METHODS.values())
+    for mechanism in COMBINED_MISSINGNESS_ORDER:
+        directory = root / f"oup_{mechanism}_eps010"
+        seed_path = directory / "comparison_seed_level_metrics.csv"
+        aggregate_path = directory / "comparison_aggregate_metrics.csv"
+        if not seed_path.is_file() or not aggregate_path.is_file():
+            raise FileNotFoundError(f"Missing NRE-C comparison analysis under {directory}.")
+        seeds = pd.read_csv(seed_path)
+        partial = seeds[
+            (seeds["backbone"] == "NRE-C")
+            & (seeds["target"] == "partial")
+            & (seeds["problem"] == "oup")
+            & (seeds["mechanism"] == mechanism)
+            & np.isclose(seeds["fraction"], 0.10)
+            & (seeds["metric"] == "c2st")
+            & seeds["method"].isin(expected_methods)
+        ].copy()
+        if len(partial) != len(expected_methods) * len(expected_budgets) * len(expected_seeds):
+            raise ValueError(f"NRE-C {mechanism} overlay has incomplete seed coverage.")
+        if not partial["configuration_complete"].all() or not (partial["n_valid_reference_observations"] == 10).all():
+            raise ValueError(f"NRE-C {mechanism} overlay contains incomplete reference evaluations.")
+        expected = {(method, budget, seed) for method in expected_methods for budget in expected_budgets for seed in expected_seeds}
+        found = set(zip(partial["method"], partial["budget"], partial["seed"].astype(int)))
+        if found != expected or partial.duplicated(["method", "budget", "seed"]).any():
+            raise ValueError(f"NRE-C {mechanism} overlay method/budget/seed grid is invalid.")
+        aggregate = pd.read_csv(aggregate_path)
+        aggregate = aggregate[
+            (aggregate["backbone"] == "NRE-C")
+            & (aggregate["target"] == "partial")
+            & (aggregate["metric"] == "c2st")
+            & aggregate["method"].isin(expected_methods)
+        ]
+        for (method, budget), group in partial.groupby(["method", "budget"]):
+            saved = aggregate[(aggregate["method"] == method) & (aggregate["budget"] == budget)]
+            if len(saved) != 1:
+                raise ValueError(f"NRE-C {mechanism} aggregate is missing for {method}/{budget}.")
+            row = saved.iloc[0]
+            if int(row["n_seeds"]) != 5 or not np.isclose(group["value"].mean(), row["mean"], rtol=0, atol=1e-12) or not np.isclose(group["value"].std(ddof=1), row["std"], rtol=0, atol=1e-12):
+                raise ValueError(f"NRE-C {mechanism} aggregate differs from saved seed metrics for {method}/{budget}.")
+        frames.append(partial)
+
+    # The full-data NRE-C curve has a distinct full-data target and appears once.
+    mcar_seed = pd.read_csv(root / "oup_mcar_eps010" / "comparison_seed_level_metrics.csv")
+    baseline = mcar_seed[
+        (mcar_seed["backbone"] == "NRE-C")
+        & (mcar_seed["target"] == "full")
+        & (mcar_seed["method"] == "nre_c_full_data")
+        & (mcar_seed["metric"] == "c2st")
+    ].copy()
+    if len(baseline) != len(expected_budgets) * len(expected_seeds) or set(baseline["seed"].astype(int)) != expected_seeds:
+        raise ValueError("NRE-C full-data baseline has incomplete seed coverage.")
+    baseline["mechanism"] = "none"
+    frames.append(baseline)
+    overlay = pd.concat(frames, ignore_index=True)
+    overlay["budget"] = overlay["budget"].map(NRE_C_TO_BENCHMARK_BUDGET)
+    if overlay["budget"].isna().any():
+        raise ValueError("NRE-C overlay contains an unknown simulation budget.")
+    return overlay
 
 
 def style_axis(
@@ -909,6 +1054,15 @@ def main() -> None:
     formats = args.formats or ["pdf", "png"]
     configure_matplotlib()
 
+    if args.nre_c_oup_overlay:
+        if not args.combined_mcar_mnar:
+            raise SystemExit("--nre-c-oup-overlay requires --combined-mcar-mnar.")
+        if selected_combined_jobs(args) != ["c2st"]:
+            raise SystemExit("--nre-c-oup-overlay supports only --metric c2st.")
+        nre_c_oup_overlay = load_nre_c_oup_overlay(args.nre_c_analysis_root)
+    else:
+        nre_c_oup_overlay = None
+
     if args.reference_mode == "full":
         # Read the original CSV directly: this remains the historical default path.
         df = load_results(args.input)
@@ -929,11 +1083,22 @@ def main() -> None:
         for metric_key in selected_combined_jobs(args):
             metric = METRICS[metric_key]
             stem = f"{metric.filename_prefix}_mcar_mnar"
-            fig, report = plot_combined_missingness_grid(df, metric=metric)
+            if nre_c_oup_overlay is not None:
+                stem = f"{stem}_nre_c_oup_overlay"
+            fig, report = plot_combined_missingness_grid(
+                df,
+                metric=metric,
+                nre_c_oup_overlay=nre_c_oup_overlay,
+            )
             reports.append(report)
             print_figure_report(report)
             written.extend(save_figure(fig, outdir=args.outdir, stem=stem, formats=formats, dpi=args.dpi))
             captions[stem] = combined_caption_text(metric, report)
+            if nre_c_oup_overlay is not None:
+                captions[stem] += (
+                    " Gray curves show NRE-C only for OUP at 10% missingness; "
+                    "the gray star and black star retain the distinct full-data reference target."
+                )
     else:
         for metric_key, missingness in selected_jobs(args):
             metric = METRICS[metric_key]
@@ -946,7 +1111,7 @@ def main() -> None:
 
     caption_path = write_captions(captions, args.outdir)
     if args.reference_mode == "partial":
-        manifest_path = args.outdir.parent / "reference_mode_manifest.json"
+        manifest_path = (args.outdir if args.nre_c_oup_overlay else args.outdir.parent) / "reference_mode_manifest.json"
         manifest_path.write_text(json.dumps({
             "reference_mode": "partial",
             "source_enriched_csv": str(args.input),
